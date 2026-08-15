@@ -1,0 +1,8 @@
+web/
+deployments/
+loadtest/
+scripts/
+*.md
+.git/
+bin/
+docker-compose.yml

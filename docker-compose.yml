@@ -1,0 +1,65 @@
+version: "3.9"
+
+services:
+  postgres:
+    image: postgres:15-alpine
+    environment:
+      POSTGRES_USER: blockmesh
+      POSTGRES_PASSWORD: blockmesh
+      POSTGRES_DB: blockmesh
+    ports:
+      - "5432:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+      - ./migrations:/docker-entrypoint-initdb.d
+
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "6379:6379"
+
+  gateway:
+    build:
+      context: ./backend
+      dockerfile: Gateway.Dockerfile
+    ports:
+      - "8080:8080"
+    environment:
+      DATABASE_URL: postgres://blockmesh:blockmesh@postgres:5432/blockmesh
+      REDIS_ADDR: redis:6379
+      RPC_ENDPOINT_1: https://ethereum-sepolia-rpc.publicnode.com
+      RPC_ENDPOINT_2: https://rpc.sepolia.org
+    depends_on:
+      - postgres
+      - redis
+
+  admin:
+    build:
+      context: ./backend
+      dockerfile: Admin.Dockerfile
+    ports:
+      - "8081:8081"
+    environment:
+      DATABASE_URL: postgres://blockmesh:blockmesh@postgres:5432/blockmesh
+    depends_on:
+      - postgres
+
+  ingestor:
+    build:
+      context: ./backend
+      dockerfile: Ingestor.Dockerfile
+    environment:
+      DATABASE_URL: postgres://blockmesh:blockmesh@postgres:5432/blockmesh
+      RPC_ENDPOINT_1: https://ethereum-sepolia-rpc.publicnode.com
+    depends_on:
+      - postgres
+
+  web:
+    build:
+      context: ./web
+      dockerfile: Dockerfile
+    ports:
+      - "3000:80"
+
+volumes:
+  pgdata:
