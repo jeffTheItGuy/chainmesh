@@ -2,6 +2,7 @@ package redis
 
 import (
 	"context"
+	"fmt"
 	"time"
 
 	goredis "github.com/redis/go-redis/v9"
@@ -33,4 +34,21 @@ func (c *Client) Incr(ctx context.Context, key string) (int64, error) {
 
 func (c *Client) Expire(ctx context.Context, key string, ttl time.Duration) error {
 	return c.client.Expire(ctx, key, ttl).Err()
+}
+
+func (c *Client) CheckRateLimit(ctx context.Context, tenantID string, quotaRPM int) (bool, error) {
+	key := fmt.Sprintf("ratelimit:%s:%s", tenantID, time.Now().Format("2006-01-02T15:04"))
+
+	current, err := c.Incr(ctx, key)
+	if err != nil {
+		return false, err
+	}
+
+	if current == 1 {
+		if err := c.Expire(ctx, key, 2*time.Minute); err != nil {
+			return false, err
+		}
+	}
+
+	return int(current) <= quotaRPM, nil
 }

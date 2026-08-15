@@ -1,32 +1,12 @@
 <!DOCTYPE html>
 <html lang="en">
-<head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>BlockMesh Admin</title>
-  <style>
-    body { font-family: system-ui, sans-serif; max-width: 800px; margin: 40px auto; padding: 0 20px; }
-    h1 { color: #2563eb; }
-    .card { background: #f8fafc; border-radius: 8px; padding: 20px; margin: 16px 0; }
-    code { background: #e2e8f0; padding: 2px 6px; border-radius: 4px; }
-  </style>
-</head>
-<body>
-  <h1>BlockMesh Admin Dashboard</h1>
-  <div class="card">
-    <h2>Gateway</h2>
-    <p>Proxy endpoint: <code>POST http://localhost:8080/v1/</code></p>
-    <p>Auth header: <code>Authorization: Bearer demo-key</code></p>
-  </div>
-  <div class="card">
-    <h2>Admin API</h2>
-    <p>Health: <code>GET http://localhost:8081/health</code></p>
-    <p>Tenants: <code>GET http://localhost:8081/tenants</code></p>
-    <p>Usage: <code>GET http://localhost:8081/usage</code></p>
-  </div>
-  <div class="card">
-    <h2>Status</h2>
-    <p>All systems operational.</p>
-  </div>
-</body>
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>BlockMesh Admin</title>
+  </head>
+  <body>
+    <div id="root"></div>
+    <script type="module" src="/src/main.tsx"></script>
+  </body>
 </html>

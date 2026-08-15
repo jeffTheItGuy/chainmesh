@@ -3,63 +3,131 @@ version: "3.9"
 services:
   postgres:
     image: postgres:15-alpine
+    restart: unless-stopped
     environment:
-      POSTGRES_USER: blockmesh
-      POSTGRES_PASSWORD: blockmesh
-      POSTGRES_DB: blockmesh
-    ports:
-      - "5432:5432"
+      POSTGRES_USER: ${POSTGRES_USER:-blockmesh}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-blockmesh}
+      POSTGRES_DB: ${POSTGRES_DB:-blockmesh}
     volumes:
       - pgdata:/var/lib/postgresql/data
       - ./migrations:/docker-entrypoint-initdb.d
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+    networks:
+      - blockmesh
 
   redis:
     image: redis:7-alpine
-    ports:
-      - "6379:6379"
+    restart: unless-stopped
+    volumes:
+      - redisdata:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+    networks:
+      - blockmesh
 
   gateway:
     build:
       context: ./backend
       dockerfile: Gateway.Dockerfile
+    restart: unless-stopped
     ports:
       - "8080:8080"
     environment:
-      DATABASE_URL: postgres://blockmesh:blockmesh@postgres:5432/blockmesh
+      DATABASE_URL: postgres://${POSTGRES_USER:-blockmesh}:${POSTGRES_PASSWORD:-blockmesh}@postgres:5432/${POSTGRES_DB:-blockmesh}
       REDIS_ADDR: redis:6379
-      RPC_ENDPOINT_1: https://ethereum-sepolia-rpc.publicnode.com
-      RPC_ENDPOINT_2: https://rpc.sepolia.org
+      RPC_ENDPOINT_1: ${RPC_ENDPOINT_1:-https://ethereum-sepolia-rpc.publicnode.com}
+      RPC_ENDPOINT_2: ${RPC_ENDPOINT_2:-https://rpc.sepolia.org}
     depends_on:
-      - postgres
-      - redis
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    networks:
+      - blockmesh
 
   admin:
     build:
       context: ./backend
       dockerfile: Admin.Dockerfile
+    restart: unless-stopped
     ports:
       - "8081:8081"
     environment:
-      DATABASE_URL: postgres://blockmesh:blockmesh@postgres:5432/blockmesh
+      DATABASE_URL: postgres://${POSTGRES_USER:-blockmesh}:${POSTGRES_PASSWORD:-blockmesh}@postgres:5432/${POSTGRES_DB:-blockmesh}
+      ADMIN_SECRET: ${ADMIN_SECRET:-}
     depends_on:
-      - postgres
+      postgres:
+        condition: service_healthy
+    networks:
+      - blockmesh
 
   ingestor:
     build:
       context: ./backend
       dockerfile: Ingestor.Dockerfile
+    restart: unless-stopped
     environment:
-      DATABASE_URL: postgres://blockmesh:blockmesh@postgres:5432/blockmesh
-      RPC_ENDPOINT_1: https://ethereum-sepolia-rpc.publicnode.com
+      DATABASE_URL: postgres://${POSTGRES_USER:-blockmesh}:${POSTGRES_PASSWORD:-blockmesh}@postgres:5432/${POSTGRES_DB:-blockmesh}
+      RPC_ENDPOINT_1: ${RPC_ENDPOINT_1:-https://ethereum-sepolia-rpc.publicnode.com}
     depends_on:
-      - postgres
+      postgres:
+        condition: service_healthy
+    networks:
+      - blockmesh
 
   web:
     build:
       context: ./web
       dockerfile: Dockerfile
+    restart: unless-stopped
     ports:
       - "3000:80"
+    depends_on:
+      - admin
+      - gateway
+    networks:
+      - blockmesh
+
+  traefik:
+    image: traefik:v3.0
+    restart: unless-stopped
+    command:
+      - "--api.dashboard=true"
+      - "--providers.docker=true"
+      - "--providers.docker.exposedbydefault=false"
+      - "--entrypoints.web.address=:80"
+      - "--entrypoints.websecure.address=:443"
+      - "--certificatesresolvers.letsencrypt.acme.tlschallenge=true"
+      - "--certificatesresolvers.letsencrypt.acme.email=${ACME_EMAIL:-admin@localhost}"
+      - "--certificatesresolvers.letsencrypt.acme.storage=/letsencrypt/acme.json"
+      - "--entrypoints.web.http.redirections.entryPoint.to=websecure"
+      - "--entrypoints.web.http.redirections.entryPoint.scheme=https"
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+      - letsencrypt:/letsencrypt
+    networks:
+      - blockmesh
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.traefik.rule=Host(`traefik.${DOMAIN:-localhost}`)"
+      - "traefik.http.routers.traefik.service=api@internal"
+      - "traefik.http.routers.traefik.tls.certresolver=letsencrypt"
 
 volumes:
   pgdata:
+  redisdata:
+  letsencrypt:
+
+networks:
+  blockmesh:
+    driver: bridge

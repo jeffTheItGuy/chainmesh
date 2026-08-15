@@ -1,0 +1,21 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+namespace: blockmesh
+resources:
+  - namespace.yaml
+  - postgres.yaml
+  - redis.yaml
+  - gateway.yaml
+  - admin.yaml
+  - ingestor.yaml
+  - web.yaml
+  - ingress.yaml
+  - prometheus.yaml
+configMapGenerator:
+  - name: blockmesh-config
+    literals:
+      - rpc-endpoint-1=https://ethereum-sepolia-rpc.publicnode.com
+      - rpc-endpoint-2=https://rpc.sepolia.org
+  - name: migrations
+    files:
+      - ../../migrations/001_init.up.sql

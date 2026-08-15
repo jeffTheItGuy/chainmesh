@@ -1,10 +1,9 @@
-<div align="center">
 
 # BlockMesh
 
-**A high-performance, multi-tenant blockchain API gateway built in Go.**
+**Self-hosted, multi-tenant blockchain API gateway.**
 
-Intelligent node routing · Redis caching · Per-tenant rate limiting · Usage metering · K3s-native
+Intelligent routing · Redis caching · Per-tenant rate limits · Usage metering · One-command deploy
 
 [![Go Version](https://img.shields.io/badge/Go-1.22+-00ADD8?logo=go)](https://golang.org)
 [![License](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
@@ -13,91 +12,91 @@ Intelligent node routing · Redis caching · Per-tenant rate limiting · Usage m
 
 ---
 
-## Overview
+## What It Is
 
-BlockMesh is a production-grade API gateway that sits between applications and blockchain RPC nodes. It adds **reliability, speed, and tenant isolation** that raw node endpoints don't provide — built to demonstrate the exact systems challenges faced by platforms serving institutional Web3 finance.
+BlockMesh is a production-grade API gateway that sits between your applications and blockchain RPC nodes. It adds **reliability, speed, and tenant isolation** that raw node endpoints don't provide.
 
-### Why This Exists
-
-Raw blockchain RPC endpoints are:
+Raw RPC endpoints are:
 - **Unreliable** — public nodes go down without warning
 - **Slow** — repeated identical queries hit the node every time
 - **Unmetered** — no way to enforce quotas or bill by usage
 - **Insecure** — no tenant isolation between customers
 
-BlockMesh solves all four.
+BlockMesh solves all four. Run it on your own server.
 
 ---
 
-## Architecture
+## Quick Start
 
+### Docker Compose (Single Server)
+
+```bash
+git clone https://github.com/yourname/blockmesh.git
+cd blockmesh
+cp .env.example .env
+# Edit .env — set POSTGRES_PASSWORD and DOMAIN
+make install
 ```
-┌─────────────────────────────────────────────────────────────────┐
-│                         CLIENT REQUEST                          │
-└─────────────────────────────────────────────────────────────────┘
-                              │
-                              ▼
-┌─────────────────────────────────────────────────────────────────┐
-│  Ingress (Nginx)                                                │
-│  /        → React Admin Dashboard                               │
-│  /api/v1/ → Gateway Service                                     │
-└─────────────────────────────────────────────────────────────────┘
-                              │
-                              ▼
-┌─────────────────────────────────────────────────────────────────┐
-│  Gateway Service (Go)                                           │
-│  ┌─────────┐ ┌────────────┐ ┌────────┐ ┌──────────┐ ┌────────┐ │
-│  │  Auth   │→│ Rate Limit │→│ Cache  │→│ Metrics  │→│ Proxy  │ │
-│  │ (APIKey)│ │(per-tenant)│ │(Redis) │ │(Prometheus│ │(ETH RPC)│
-│  └─────────┘ └────────────┘ └────────┘ └──────────┘ └────────┘ │
-└─────────────────────────────────────────────────────────────────┘
-                              │
-              ┌───────────────┼───────────────┐
-              ▼               ▼               ▼
-        ┌─────────┐    ┌─────────┐     ┌─────────────┐
-        │  Redis  │    │ Postgres│     │ ETH RPC     │
-        │ (Cache  │    │(Tenants │     │ Node A      │
-        │ + RL)   │    │ + Usage)│     │ Node B (FB) │
-        └─────────┘    └─────────┘     └─────────────┘
 
-┌─────────────────────────────────────────────────────────────────┐
-│  Background Services                                            │
-│  ┌─────────────┐  ┌─────────────────────────────────────────┐  │
-│  │  Admin API  │  │  Ingestor (CronJob)                     │  │
-│  │  /tenants   │  │  Fetches Sepolia blocks → PostgreSQL    │  │
-│  │  /usage     │  │  Runs every 60s                         │  │
-│  └─────────────┘  └─────────────────────────────────────────┘  │
-└─────────────────────────────────────────────────────────────────┘
+That's it. The installer checks for Docker, creates your environment, and starts Postgres, Redis, Gateway, Admin API, Ingestor, Web Dashboard, and Traefik with automatic HTTPS.
+
+### Kubernetes / K3s
+
+```bash
+# 1. Create secrets
+kubectl create namespace blockmesh
+kubectl create secret generic blockmesh-secrets   --from-literal=database-url='postgres://blockmesh:yourpassword@postgres:5432/blockmesh'   --from-literal=postgres-user='blockmesh'   --from-literal=postgres-password='yourpassword'   -n blockmesh
+
+# 2. Deploy everything
+kubectl apply -k deployments/base/
+
+# 3. Verify
+kubectl get pods -n blockmesh
 ```
 
 ---
 
-## Tech Stack
+## Self-Hosting Options
 
-| Layer | Technology | Purpose |
-|-------|-----------|---------|
-| **Language** | Go 1.22 | Gateway, Admin API, Ingestor |
-| **Frontend** | React 18 + Vite | Admin dashboard |
-| **Cache** | Redis 7 | Hot query caching + rate limit counters |
-| **Database** | PostgreSQL 15 | Tenant registry + usage metering |
-| **Blockchain** | Sepolia Testnet | ETH JSON-RPC integration |
-| **Orchestration** | Kubernetes / K3s | Container orchestration |
-| **Ingress** | Nginx + cert-manager | TLS termination + routing |
-| **Observability** | Prometheus + Grafana | Metrics + dashboards |
-| **Load Testing** | k6 | Performance validation |
+| Method | Best For | TLS | Command |
+|--------|----------|-----|---------|
+| **Docker Compose** | Single VPS / homelab | Traefik + Let's Encrypt | `make install` |
+| **K3s** | Single-node K8s | cert-manager + Traefik | `kubectl apply -k deployments/base/` |
+| **Coolify / Easypanel** | GUI-managed PaaS | Built-in | Use provided Docker Compose template |
+
+### Pre-built Images
+
+No need to compile. Pull from GHCR:
+
+```bash
+ghcr.io/yourname/blockmesh-gateway:latest
+ghcr.io/yourname/blockmesh-admin:latest
+ghcr.io/yourname/blockmesh-ingestor:latest
+ghcr.io/yourname/blockmesh-web:latest
+```
 
 ---
 
-## Key Features
+## Hardware Requirements
+
+| Component | Minimum | Recommended |
+|-----------|---------|-------------|
+| CPU | 1 vCPU | 2 vCPU |
+| RAM | 1 GB | 2 GB |
+| Disk | 10 GB | 20 GB SSD |
+| Network | Any | Stable outbound to RPC endpoints |
+
+---
+
+## Features
 
 ### 🔀 Intelligent Node Failover
-- Maintains a pool of upstream RPC endpoints
-- Automatic circuit breaker: if a node fails 5× in 30s, traffic routes away for 60s
-- Round-robin with health checks
+- Pool of upstream RPC endpoints with automatic failover
+- If a node fails, traffic routes to the next healthy endpoint
 
 ### ⚡ Domain-Aware Caching
-- `eth_chainId` → 24h TTL (never changes)
-- `eth_getBlockByNumber(latest)` → 2s TTL (fresh but safe)
+- `eth_chainId` → 24h TTL
+- `eth_getBlockByNumber(latest)` → 2s TTL
 - `eth_getBalance` → 30s TTL
 - Cache hits served from Redis in **< 5ms**
 
@@ -108,64 +107,14 @@ BlockMesh solves all four.
 - Usage recorded per method, per tenant, per minute
 
 ### 📊 Usage Metering
-- Background async writes to PostgreSQL
-- Daily aggregation queryable via Admin API
-- Ready for billing integration (Stripe, Chargebee, etc.)
+- Async writes to PostgreSQL
+- Daily aggregation via Admin API
+- Ready for billing integration
 
 ### 📈 Observability
-- Prometheus metrics: `blockmesh_requests_total`, `blockmesh_request_duration_seconds`
-- Per-tenant, per-method, per-cache-status labels
-- Grafana dashboard included
-
----
-
-## Quick Start
-
-### Prerequisites
-- [Docker](https://docs.docker.com/get-docker/) + Docker Compose
-- [Go 1.22+](https://golang.org/dl/) (for local development)
-- [kubectl](https://kubernetes.io/docs/tasks/tools/) + [K3s](https://k3s.io/) (for deployment)
-
-### Local Development
-
-```bash
-# Clone and enter
-git clone https://github.com/yourname/blockmesh.git
-cd blockmesh
-
-# Spin up everything (Postgres, Redis, Gateway, Admin, Ingestor, Web)
-docker-compose up --build
-
-# In another terminal, test the gateway
-curl -H "Authorization: Bearer demo-key"   -X POST http://localhost:8080/v1/   -H "Content-Type: application/json"   -d '{
-    "jsonrpc": "2.0",
-    "method": "eth_blockNumber",
-    "params": [],
-    "id": 1
-  }'
-
-# Open the admin dashboard
-open http://localhost:3000
-```
-
-### K3s Deployment
-
-```bash
-# Build all images
-make build-all
-
-# Import into K3s (or push to a registry)
-for img in gateway admin ingestor web; do
-  docker save blockmesh-$img:latest | sudo k3s ctr images import -
-done
-
-# Deploy
-kubectl apply -k deployments/base/
-
-# Verify
-kubectl get pods -n blockmesh
-kubectl logs -n blockmesh deployment/gateway
-```
+- Prometheus metrics on all services
+- Liveness probes for K8s health checks
+- Grafana-compatible scraping endpoints
 
 ---
 
@@ -181,7 +130,7 @@ Proxies any valid ETH JSON-RPC method with auth, caching, and metering.
 | `Authorization` | `Bearer <api-key>` |
 | `Content-Type` | `application/json` |
 
-**Example Request:**
+**Example:**
 ```bash
 curl -H "Authorization: Bearer demo-key"   -X POST http://localhost:8080/v1/   -d '{
     "jsonrpc": "2.0",
@@ -191,86 +140,93 @@ curl -H "Authorization: Bearer demo-key"   -X POST http://localhost:8080/v1/   -
   }'
 ```
 
-**Example Response:**
-```json
-{
-  "jsonrpc": "2.0",
-  "id": 1,
-  "result": "0x1a055690d9db80000"
-}
-```
-
 ### Admin API
 
 | Endpoint | Method | Description |
 |----------|--------|-------------|
-| `/health` | GET | Service health check |
+| `/health` | GET | Service health |
 | `/tenants` | GET | List all tenants |
 | `/usage?tenant=demo-key&day=2026-08-14` | GET | Daily usage report |
+| `/blocks` | GET | Last 50 ingested blocks |
+
+### Web Dashboard
+
+Visit `http://localhost:3000` (or your configured domain) for a live React dashboard showing:
+- System health
+- Tenant list with rate limits
+- Per-tenant usage reports
+- Recently ingested blocks
 
 ---
 
-## Performance
+## Configuration
 
-Load tested with [k6](https://k6.io/) against a single K3s node.
+All services are configured via environment variables:
 
-| Scenario | RPS | p50 | p99 | Cache Hit |
-|----------|-----|-----|-----|-----------|
-| `eth_blockNumber` (cached) | 4,200 | 8ms | 12ms | 95% |
-| `eth_blockNumber` (uncached) | 180 | 420ms | 890ms | 0% |
-| `eth_getBalance` (cached) | 3,800 | 9ms | 14ms | 90% |
+| Variable | Required | Default | Description |
+|----------|----------|---------|-------------|
+| `DATABASE_URL` | Yes | — | Postgres connection string |
+| `REDIS_ADDR` | Yes | — | Redis host:port |
+| `RPC_ENDPOINT_1` | Yes | — | Primary blockchain RPC |
+| `RPC_ENDPOINT_2` | No | — | Fallback blockchain RPC |
+| `POSTGRES_USER` | Yes | `blockmesh` | DB user |
+| `POSTGRES_PASSWORD` | Yes | `blockmesh` | DB password |
+| `DOMAIN` | No | `localhost` | For Traefik TLS |
+| `ACME_EMAIL` | No | — | Let's Encrypt email |
 
-> **93% latency reduction** on hot paths via domain-aware Redis caching.
+Copy `.env.example` to `.env` and adjust.
 
-Run tests yourself:
+---
+
+## Backups
+
+PostgreSQL data lives in the `pgdata` Docker volume. To back up:
+
 ```bash
-k6 run loadtest/k6/smoke.js
-k6 run loadtest/k6/load.js
+docker exec blockmesh-postgres-1 pg_dump -U blockmesh blockmesh > backup.sql
+```
+
+To restore:
+
+```bash
+cat backup.sql | docker exec -i blockmesh-postgres-1 psql -U blockmesh -d blockmesh
 ```
 
 ---
 
-## Project Structure
+## Upgrading
 
+```bash
+cd blockmesh
+git pull
+docker compose pull
+docker compose up -d
 ```
-blockmesh/
-├── backend/          # Go gateway, admin, ingestor + shared libs
-│   ├── gateway/
-│   ├── admin/
-│   ├── ingestor/
-│   └── shared/
-├── web/              # React admin dashboard
-├── migrations/       # PostgreSQL schema
-├── deployments/      # K3s manifests
-└── loadtest/         # k6 tests
-```
+
+Zero-downtime for the gateway (2 replicas in K8s, restart policy in Compose).
 
 ---
 
-## Design Decisions
+## Tech Stack
 
-**Why one Go module instead of separate modules per service?**
-
-All three backend services share domain logic (blockchain client, storage abstractions, models). A single module eliminates version drift and guarantees consistency across the gateway, admin, and ingestor. Each service compiles to its own lean binary via `cmd/` entrypoints.
-
-**Why K3s instead of managed Kubernetes?**
-
-This project is designed to run on minimal infrastructure. K3s provides full Kubernetes semantics on a single node with zero cloud dependency — perfect for homelab demos and edge deployments.
-
-**Why Sepolia instead of Mainnet?**
-
-Free public RPC endpoints, no real funds at risk, and identical JSON-RPC semantics. The blockchain client abstraction makes swapping to Mainnet or any EVM chain a one-line config change.
+| Layer | Technology |
+|-------|-----------|
+| Gateway / Admin / Ingestor | Go 1.22 |
+| Dashboard | React 18 + Vite |
+| Cache | Redis 7 |
+| Database | PostgreSQL 15 |
+| Ingress | Traefik v3 (auto HTTPS) |
+| Orchestration | Docker Compose or K3s |
+| Metrics | Prometheus |
 
 ---
 
-## Roadmap
+## Security
 
-- [ ] Circuit breaker state machine with Prometheus metrics
-- [ ] WebSocket support for `eth_subscribe`
-- [ ] Tiered subscription plans (free / pro / enterprise)
-- [ ] Grafana dashboard JSON export
-- [ ] OpenAPI spec generation
-- [ ] Distributed tracing (OpenTelemetry)
+- Never commit `.env` or `deployments/base/secrets.yaml` to git
+- Change `demo-key` before production use
+- Use strong `POSTGRES_PASSWORD`
+- Traefik handles TLS termination; no plaintext traffic
 
 ---
 
@@ -280,8 +236,6 @@ MIT
 
 ---
 
-<div align="center">
-
-Built to demonstrate production-grade distributed systems engineering.
+Built for self-hosters who need institutional-grade blockchain infrastructure without the cloud tax.
 
 </div>

@@ -1,13 +1,13 @@
-.PHONY: build-gateway build-admin build-ingestor build-web test lint migrate deploy up
+.PHONY: build-gateway build-admin build-ingestor build-web test lint migrate deploy up install
 
 build-gateway:
-	docker build -f backend/gateway/Dockerfile -t blockmesh-gateway:latest ./backend
+	docker build -f backend/Gateway.Dockerfile -t blockmesh-gateway:latest ./backend
 
 build-admin:
-	docker build -f backend/admin/Dockerfile -t blockmesh-admin:latest ./backend
+	docker build -f backend/Admin.Dockerfile -t blockmesh-admin:latest ./backend
 
 build-ingestor:
-	docker build -f backend/ingestor/Dockerfile -t blockmesh-ingestor:latest ./backend
+	docker build -f backend/Ingestor.Dockerfile -t blockmesh-ingestor:latest ./backend
 
 build-web:
 	docker build -f web/Dockerfile -t blockmesh-web:latest ./web
@@ -27,4 +27,7 @@ deploy:
 	kubectl apply -k deployments/base/
 
 up:
-	docker-compose up --build
+	docker compose up --build
+
+install:
+	chmod +x scripts/install.sh && ./scripts/install.sh

@@ -38,10 +38,10 @@ func main() {
 	p := proxy.New(bc, db, cache, log)
 
 	mux := http.NewServeMux()
-	mux.Handle("/v1/", middleware.Auth(db)(p))
+	handler := middleware.Auth(db)(middleware.RateLimit(cache)(p))
+	mux.Handle("/v1/", handler)
 
 	srv := &http.Server{Addr: ":8080", Handler: mux}
-
 	go func() {
 		log.Info("gateway starting", "addr", srv.Addr)
 		if err := srv.ListenAndServe(); err != nil && err != http.ErrServerClosed {

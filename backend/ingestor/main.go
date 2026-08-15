@@ -5,10 +5,12 @@ import (
 	"encoding/json"
 	"log/slog"
 	"os"
+	"strconv"
 	"time"
 
 	"github.com/yourname/blockmesh/shared/blockchain"
 	"github.com/yourname/blockmesh/shared/logger"
+	"github.com/yourname/blockmesh/shared/model"
 	"github.com/yourname/blockmesh/shared/storage/postgres"
 )
 
@@ -56,6 +58,31 @@ func fetchAndStore(ctx context.Context, bc *blockchain.Client, db *postgres.DB, 
 		return err
 	}
 
-	log.Info("ingested block", "hash", block.Hash, "txs", len(block.Transactions))
+	num, err := strconv.ParseInt(block.Number, 0, 64)
+	if err != nil {
+		return err
+	}
+
+	tsHex, err := strconv.ParseInt(block.Timestamp, 0, 64)
+	if err != nil {
+		return err
+	}
+	timestamp := time.Unix(tsHex, 0)
+
+	b := &model.Block{
+		Number:     num,
+		Hash:       block.Hash,
+		ParentHash: block.ParentHash,
+		Timestamp:  timestamp,
+		TxCount:    len(block.Transactions),
+		RawJSON:    raw["result"],
+	}
+
+	if err := db.StoreBlock(ctx, b); err != nil {
+		log.Error("store block failed", "err", err)
+		return err
+	}
+
+	log.Info("ingested block", "number", num, "hash", block.Hash, "txs", len(block.Transactions))
 	return nil
 }
