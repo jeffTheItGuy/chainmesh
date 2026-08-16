@@ -1,6 +1,6 @@
 import { useState, type FormEvent } from 'react'
-import { verifySecret } from '../lib/api'
-import { storeSecret } from '../lib/auth'
+import { verifySecret } from './api'
+import { storeSecret } from './auth'
 
 interface LoginProps {
   onAuthenticated: () => void

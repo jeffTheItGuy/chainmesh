@@ -1,12 +1,12 @@
 import { useEffect, useState, useCallback } from 'react'
-import { api, AuthError, type Tenant, type Block } from './lib/api'
-import { getStoredSecret, clearSecret } from './lib/auth'
-import Login from './components/Login'
-import TopBar from './components/TopBar'
-import StatsStrip from './components/StatsStrip'
-import TenantsSection from './components/TenantsSection'
-import UsageSection from './components/UsageSection'
-import BlocksSection from './components/BlocksSection'
+import { api, AuthError, type Tenant, type Block } from './api'
+import { getStoredSecret, clearSecret } from './auth'
+import Login from './Login'
+import TopBar from './TopBar'
+import StatsStrip from './StatsStrip'
+import TenantsSection from './TenantsSection'
+import UsageSection from './UsageSection'
+import BlocksSection from './BlocksSection'
 
 export default function App() {
   const [authed, setAuthed] = useState<boolean>(() => !!getStoredSecret())

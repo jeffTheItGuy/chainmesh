@@ -1,5 +1,5 @@
 import { useState, type FormEvent } from 'react'
-import { api, type Usage } from '../lib/api'
+import { api, type Usage } from './api'
 
 export default function UsageSection() {
   const [apiKey, setApiKey] = useState('')

@@ -1,4 +1,4 @@
-import type { Block } from '../lib/api'
+import type { Block } from './api'
 
 interface BlocksSectionProps {
   blocks: Block[]

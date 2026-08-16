@@ -1,5 +1,5 @@
 import { useState, type FormEvent } from 'react'
-import { api, type Tenant, type CreatedTenant } from '../lib/api'
+import { api, type Tenant, type CreatedTenant } from './api'
 
 interface TenantsSectionProps {
   tenants: Tenant[]
