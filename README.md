@@ -1,5 +1,5 @@
 
-# BlockMesh
+# Chainmesh
 
 **Self-hosted, multi-tenant blockchain API gateway.**
 
@@ -14,7 +14,7 @@ Intelligent routing · Redis caching · Per-tenant rate limits · Usage metering
 
 ## What It Is
 
-BlockMesh is a production-grade API gateway that sits between your applications and blockchain RPC nodes. It adds **reliability, speed, and tenant isolation** that raw node endpoints don't provide.
+Chainmesh is a production-grade API gateway that sits between your applications and blockchain RPC nodes. It adds **reliability, speed, and tenant isolation** that raw node endpoints don't provide.
 
 Raw RPC endpoints are:
 - **Unreliable** — public nodes go down without warning
@@ -22,7 +22,7 @@ Raw RPC endpoints are:
 - **Unmetered** — no way to enforce quotas or bill by usage
 - **Insecure** — no tenant isolation between customers
 
-BlockMesh solves all four. Run it on your own server.
+Chainmesh solves all four. Run it on your own server.
 
 ---
 
@@ -31,8 +31,8 @@ BlockMesh solves all four. Run it on your own server.
 ### Docker Compose (Single Server)
 
 ```bash
-git clone https://github.com/yourname/blockmesh.git
-cd blockmesh
+git clone https://github.com/yourname/Chainmesh.git
+cd Chainmesh
 cp .env.example .env
 # Edit .env — set POSTGRES_PASSWORD and DOMAIN
 make install
@@ -44,14 +44,14 @@ That's it. The installer checks for Docker, creates your environment, and starts
 
 ```bash
 # 1. Create secrets
-kubectl create namespace blockmesh
-kubectl create secret generic blockmesh-secrets   --from-literal=database-url='postgres://blockmesh:yourpassword@postgres:5432/blockmesh'   --from-literal=postgres-user='blockmesh'   --from-literal=postgres-password='yourpassword'   -n blockmesh
+kubectl create namespace Chainmesh
+kubectl create secret generic Chainmesh-secrets   --from-literal=database-url='postgres://Chainmesh:yourpassword@postgres:5432/Chainmesh'   --from-literal=postgres-user='Chainmesh'   --from-literal=postgres-password='yourpassword'   -n Chainmesh
 
 # 2. Deploy everything
 kubectl apply -k deployments/base/
 
 # 3. Verify
-kubectl get pods -n blockmesh
+kubectl get pods -n Chainmesh
 ```
 
 ---
@@ -69,10 +69,10 @@ kubectl get pods -n blockmesh
 No need to compile. Pull from GHCR:
 
 ```bash
-ghcr.io/yourname/blockmesh-gateway:latest
-ghcr.io/yourname/blockmesh-admin:latest
-ghcr.io/yourname/blockmesh-ingestor:latest
-ghcr.io/yourname/blockmesh-web:latest
+ghcr.io/yourname/Chainmesh-gateway:latest
+ghcr.io/yourname/Chainmesh-admin:latest
+ghcr.io/yourname/Chainmesh-ingestor:latest
+ghcr.io/yourname/Chainmesh-web:latest
 ```
 
 ---
@@ -169,8 +169,8 @@ All services are configured via environment variables:
 | `REDIS_ADDR` | Yes | — | Redis host:port |
 | `RPC_ENDPOINT_1` | Yes | — | Primary blockchain RPC |
 | `RPC_ENDPOINT_2` | No | — | Fallback blockchain RPC |
-| `POSTGRES_USER` | Yes | `blockmesh` | DB user |
-| `POSTGRES_PASSWORD` | Yes | `blockmesh` | DB password |
+| `POSTGRES_USER` | Yes | `Chainmesh` | DB user |
+| `POSTGRES_PASSWORD` | Yes | `Chainmesh` | DB password |
 | `DOMAIN` | No | `localhost` | For Traefik TLS |
 | `ACME_EMAIL` | No | — | Let's Encrypt email |
 
@@ -183,13 +183,13 @@ Copy `.env.example` to `.env` and adjust.
 PostgreSQL data lives in the `pgdata` Docker volume. To back up:
 
 ```bash
-docker exec blockmesh-postgres-1 pg_dump -U blockmesh blockmesh > backup.sql
+docker exec Chainmesh-postgres-1 pg_dump -U Chainmesh Chainmesh > backup.sql
 ```
 
 To restore:
 
 ```bash
-cat backup.sql | docker exec -i blockmesh-postgres-1 psql -U blockmesh -d blockmesh
+cat backup.sql | docker exec -i Chainmesh-postgres-1 psql -U Chainmesh -d Chainmesh
 ```
 
 ---
@@ -197,7 +197,7 @@ cat backup.sql | docker exec -i blockmesh-postgres-1 psql -U blockmesh -d blockm
 ## Upgrading
 
 ```bash
-cd blockmesh
+cd Chainmesh
 git pull
 docker compose pull
 docker compose up -d
@@ -239,7 +239,7 @@ MIT
 Built for self-hosters who need institutional-grade blockchain infrastructure without the cloud tax.
 
 </div>
-# BlockMesh
+# Chainmesh
 
 **Self-hosted, multi-tenant blockchain API gateway.**
 
@@ -253,7 +253,7 @@ Intelligent routing · Redis caching · Per-tenant rate limits · Usage metering
 
 ## What It Is
 
-BlockMesh is a production-grade API gateway that sits between your applications and blockchain RPC nodes. It adds **reliability, speed, and tenant isolation** that raw node endpoints don't provide.
+Chainmesh is a production-grade API gateway that sits between your applications and blockchain RPC nodes. It adds **reliability, speed, and tenant isolation** that raw node endpoints don't provide.
 
 Raw RPC endpoints are:
 - **Unreliable** — public nodes go down without warning
@@ -261,7 +261,7 @@ Raw RPC endpoints are:
 - **Unmetered** — no way to enforce quotas or bill by usage
 - **Insecure** — no tenant isolation between customers
 
-BlockMesh solves all four. Run it on your own infrastructure.
+Chainmesh solves all four. Run it on your own infrastructure.
 
 ---
 
@@ -313,8 +313,8 @@ BlockMesh solves all four. Run it on your own infrastructure.
 ### 1. Clone and Configure
 
 ```bash
-git clone https://github.com/yourname/blockmesh.git
-cd blockmesh
+git clone https://github.com/yourname/Chainmesh.git
+cd Chainmesh
 cp .env.example .env
 ```
 
@@ -401,9 +401,9 @@ All services are configured via environment variables in your `.env` file:
 
 | Variable | Required | Default | Description |
 |----------|----------|---------|-------------|
-| `POSTGRES_USER` | Yes | `blockmesh` | Database user |
-| `POSTGRES_PASSWORD` | Yes | `blockmesh` | Database password |
-| `POSTGRES_DB` | Yes | `blockmesh` | Database name |
+| `POSTGRES_USER` | Yes | `Chainmesh` | Database user |
+| `POSTGRES_PASSWORD` | Yes | `Chainmesh` | Database password |
+| `POSTGRES_DB` | Yes | `Chainmesh` | Database name |
 | `ADMIN_SECRET` | **Yes** | — | Shared secret for Admin API and Dashboard login |
 | `DATABASE_URL` | Auto | — | Constructed automatically by Docker Compose |
 | `REDIS_ADDR` | Auto | — | Constructed automatically by Docker Compose |
@@ -418,12 +418,12 @@ PostgreSQL data lives in the `pgdata` Docker volume.
 
 **Backup:**
 ```bash
-docker exec blockmesh-postgres-1 pg_dump -U blockmesh blockmesh > backup.sql
+docker exec Chainmesh-postgres-1 pg_dump -U Chainmesh Chainmesh > backup.sql
 ```
 
 **Restore:**
 ```bash
-cat backup.sql | docker exec -i blockmesh-postgres-1 psql -U blockmesh -d blockmesh
+cat backup.sql | docker exec -i Chainmesh-postgres-1 psql -U Chainmesh -d Chainmesh
 ```
 
 **Upgrading:**
