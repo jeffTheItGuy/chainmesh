@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"log/slog"
 	"os"
 	"os/signal"
@@ -18,7 +19,6 @@ import (
 
 func main() {
 	log := logger.New()
-
 	db, err := postgres.New(os.Getenv("DATABASE_URL"))
 	if err != nil {
 		log.Error("postgres failed", "err", err)
@@ -35,19 +35,16 @@ func main() {
 	}
 
 	ingestCtx, ingestCancel := context.WithCancel(context.Background())
-
 	for _, cfg := range configs {
 		if !cfg.Enabled {
 			continue
 		}
-
 		go runIngestor(ingestCtx, cfg, db, log)
 	}
 
 	sig := make(chan os.Signal, 1)
 	signal.Notify(sig, syscall.SIGINT, syscall.SIGTERM)
 	<-sig
-
 	log.Info("shutting down ingestor")
 	ingestCancel()
 	time.Sleep(500 * time.Millisecond)
@@ -97,9 +94,24 @@ func fetchAndStore(
 	db *postgres.DB,
 	log *slog.Logger,
 ) error {
-	resp, err := bc.Call(ctx, "eth_getBlockByNumber", "latest", true)
+	// FIX: Use `false` instead of `true` for the second parameter.
+	// Public RPC nodes often reject `true` (full transaction objects) because 
+	// the response is too large. We only need the transaction count, so 
+	// returning just the transaction hashes is sufficient and universally supported.
+	resp, err := bc.Call(ctx, "eth_getBlockByNumber", "latest", false)
 	if err != nil {
 		return err
+	}
+
+	// FIX: Check for RPC-level errors before trying to parse the result.
+	// This prevents the confusing "unexpected end of JSON input" error when 
+	// the node returns an error response instead of a block.
+	var rpcResp blockchain.RPCResponse
+	if err := json.Unmarshal(resp, &rpcResp); err != nil {
+		return fmt.Errorf("invalid rpc response: %w", err)
+	}
+	if rpcResp.Error != nil {
+		return fmt.Errorf("rpc error: %s", rpcResp.Error.Message)
 	}
 
 	var raw map[string]json.RawMessage
@@ -114,7 +126,6 @@ func fetchAndStore(
 		Timestamp    string `json:"timestamp"`
 		Transactions []any  `json:"transactions"`
 	}
-
 	if err := json.Unmarshal(raw["result"], &block); err != nil {
 		return err
 	}
