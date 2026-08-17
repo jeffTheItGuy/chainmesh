@@ -1,0 +1,23 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: chainmesh-redis-config
+  namespace: {{ .Values.namespace }}
+data:
+  redis.conf: |
+    dir /data
+    bind 0.0.0.0
+    {{- if .Values.redisConfig.maxmemory }}
+    maxmemory {{ .Values.redisConfig.maxmemory }}
+    {{- end }}
+    {{- if .Values.redisConfig.maxmemoryPolicy }}
+    maxmemory-policy {{ .Values.redisConfig.maxmemoryPolicy }}
+    {{- end }}
+    {{- if .Values.redisConfig.appendonly }}
+    appendonly {{ .Values.redisConfig.appendonly }}
+    {{- end }}
+    {{- if eq (.Values.redisConfig.save | toString) "" }}
+    save ""
+    {{- else if .Values.redisConfig.save }}
+    save {{ .Values.redisConfig.save }}
+    {{- end }}

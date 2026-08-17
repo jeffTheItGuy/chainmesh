@@ -1,0 +1,37 @@
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: chainmesh-web-policy
+  namespace: {{ .Values.namespace }}
+spec:
+  podSelector:
+    matchLabels:
+      app: chainmesh-web
+  policyTypes:
+    - Ingress
+    - Egress
+  ingress:
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: "kube-system"
+      ports:
+        - protocol: TCP
+          port: {{ .Values.service.port }}
+  egress:
+    {{- range .Values.networkPolicy.allowedTo }}
+    - to:
+        - podSelector:
+            matchLabels:
+              app: {{ .app }}
+      ports:
+        - protocol: TCP
+          port: {{ .port }}
+    {{- end }}
+    - to:
+        - namespaceSelector: {}
+      ports:
+        - protocol: TCP
+          port: 53
+        - protocol: UDP
+          port: 53

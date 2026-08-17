@@ -1,0 +1,15 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: chainmesh-web-svc
+  namespace: {{ .Values.namespace }}
+  labels:
+    app: chainmesh-web
+spec:
+  type: {{ .Values.service.type }}
+  selector:
+    app: chainmesh-web
+  ports:
+    - port: {{ .Values.service.port }}
+      targetPort: {{ .Values.service.port }}
+      name: http

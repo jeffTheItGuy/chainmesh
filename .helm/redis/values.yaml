@@ -1,0 +1,35 @@
+namespace: chainmesh
+replicaCount: 1
+auth:
+  enabled: true
+image:
+  repository: redis
+  tag: "7-alpine"
+  pullPolicy: Always
+service:
+  port: 6379
+  type: ClusterIP
+redisConfig:
+  maxmemory: "256mb"
+  maxmemoryPolicy: "allkeys-lru"
+  appendonly: "no"
+  save: ""
+storage:
+  size: 2Gi
+  storageClass: "local-path"
+resources:
+  limits:
+    cpu: "200m"
+    memory: "256Mi"
+  requests:
+    cpu: "50m"
+    memory: "128Mi"
+securityContext:
+  runAsNonRoot: true
+  runAsUser: 999
+  runAsGroup: 999
+  fsGroup: 999
+networkPolicy:
+  enabled: true
+  allowedFrom:
+    - app: chainmesh-gateway

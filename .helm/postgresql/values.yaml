@@ -1,0 +1,32 @@
+namespace: chainmesh
+replicaCount: 1
+image:
+  repository: postgres
+  tag: "15-alpine"
+  pullPolicy: Always
+service:
+  port: 5432
+  type: ClusterIP
+env:
+  POSTGRES_DB: "chainmesh"
+  PGDATA: "/var/lib/postgresql/data/pgdata"
+storage:
+  size: 10Gi
+  storageClass: "local-path"
+resources:
+  limits:
+    cpu: "500m"
+    memory: "768Mi"
+  requests:
+    cpu: "100m"
+    memory: "256Mi"
+securityContext:
+  runAsNonRoot: true
+  runAsUser: 999
+  runAsGroup: 999
+  fsGroup: 999
+networkPolicy:
+  allowedFrom:
+    - app: chainmesh-gateway
+    - app: chainmesh-admin
+    - app: chainmesh-ingestor

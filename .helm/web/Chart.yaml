@@ -1,0 +1,6 @@
+apiVersion: v2
+name: chainmesh-web
+description: Chainmesh Web Frontend
+type: application
+version: 1.0.0
+appVersion: "1.0"

@@ -1,0 +1,52 @@
+name: Redis Deploy
+on:
+  workflow_dispatch:
+env:
+  NAMESPACE: chainmesh
+  RELEASE_NAME: redis-release
+  DEPLOYMENT_NAME: chainmesh-redis
+jobs:
+  deploy:
+    runs-on: self-hosted
+    steps:
+      - uses: actions/checkout@v4
+      - name: Setup SSH and Copy Helm Files to Remote
+        env:
+          REMOTE_SERVER: ${{ secrets.REMOTE_SERVER }}
+          REMOTE_USER: ${{ secrets.REMOTE_USER }}
+          REMOTE_WORKSPACE: ${{ secrets.REMOTE_DEPLOY_DIR }}/redis-${{ github.run_id }}
+        run: |
+          mkdir -p ~/.ssh && chmod 700 ~/.ssh
+          ssh-keyscan -H "$REMOTE_SERVER" >> ~/.ssh/known_hosts 2>/dev/null || true
+          ssh -o StrictHostKeyChecking=yes "$REMOTE_USER@$REMOTE_SERVER" "rm -rf $REMOTE_WORKSPACE && mkdir -p $REMOTE_WORKSPACE/.helm"
+          scp -o StrictHostKeyChecking=yes -r .helm/redis "$REMOTE_USER@$REMOTE_SERVER:$REMOTE_WORKSPACE/.helm/"
+      - name: Deploy on Remote Server
+        env:
+          REMOTE_SERVER: ${{ secrets.REMOTE_SERVER }}
+          REMOTE_USER: ${{ secrets.REMOTE_USER }}
+          REMOTE_WORKSPACE: ${{ secrets.REMOTE_DEPLOY_DIR }}/redis-${{ github.run_id }}
+          RESTART_REASON: "github-actions-deploy"
+        run: |
+          ssh -o StrictHostKeyChecking=yes "$REMOTE_USER@$REMOTE_SERVER" \
+            RESTART_REASON="$RESTART_REASON" \
+            REMOTE_WORKSPACE="$REMOTE_WORKSPACE" \
+            NAMESPACE="${{ env.NAMESPACE }}" \
+            DEPLOYMENT_NAME="${{ env.DEPLOYMENT_NAME }}" \
+            RELEASE_NAME="${{ env.RELEASE_NAME }}" \
+            bash << 'ENDSSH'
+          set -e
+          export KUBECONFIG=/etc/rancher/k3s/k3s.yaml
+          cd "$REMOTE_WORKSPACE"
+          TIMESTAMP=$(date +%s)
+          helm upgrade --install $RELEASE_NAME .helm/redis \
+            --namespace "$NAMESPACE" \
+            --set namespace="$NAMESPACE" \
+            --set restartTimestamp="$TIMESTAMP" \
+            --set restartReason="$RESTART_REASON" \
+            --timeout=600s
+          kubectl wait --for=condition=available --timeout=300s deployment/$DEPLOYMENT_NAME -n $NAMESPACE || (kubectl logs -n $NAMESPACE -l app=$DEPLOYMENT_NAME --tail=50 && exit 1)
+          ENDSSH
+      - name: Cleanup Remote Workspace
+        if: always()
+        run: |
+          ssh -o StrictHostKeyChecking=yes "${{ secrets.REMOTE_USER }}@${{ secrets.REMOTE_SERVER }}" "rm -rf ${{ secrets.REMOTE_DEPLOY_DIR }}/redis-${{ github.run_id }}"

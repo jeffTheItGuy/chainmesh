@@ -1,0 +1,28 @@
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: chainmesh-ingestor-policy
+  namespace: {{ .Values.namespace }}
+spec:
+  podSelector:
+    matchLabels:
+      app: chainmesh-ingestor
+  policyTypes:
+    - Egress
+  egress:
+    {{- range .Values.networkPolicy.allowedTo }}
+    - to:
+        - podSelector:
+            matchLabels:
+              app: {{ .app }}
+      ports:
+        - protocol: TCP
+          port: {{ .port }}
+    {{- end }}
+    - to:
+        - namespaceSelector: {}
+      ports:
+        - protocol: TCP
+          port: 53
+        - protocol: UDP
+          port: 53

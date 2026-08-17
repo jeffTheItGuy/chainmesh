@@ -1,0 +1,28 @@
+namespace: chainmesh
+replicaCount: 1
+image:
+  repository: chainmesh-ingestor
+  tag: ""
+  pullPolicy: Never
+envFrom:
+  - secretRef:
+      name: chainmesh-secrets
+env:
+  POSTGRES_DB: "chainmesh"
+  RPC_ENDPOINT_1: "https://ethereum-sepolia-rpc.publicnode.com"
+resources:
+  limits:
+    cpu: "300m"
+    memory: "384Mi"
+  requests:
+    cpu: "50m"
+    memory: "128Mi"
+securityContext:
+  runAsNonRoot: true
+  runAsUser: 1000
+  runAsGroup: 1000
+  fsGroup: 1000
+networkPolicy:
+  allowedTo:
+    - app: chainmesh-postgresql
+      port: 5432

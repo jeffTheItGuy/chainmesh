@@ -1,0 +1,23 @@
+{{- if and .Values.networkPolicy .Values.networkPolicy.enabled }}
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: chainmesh-redis-policy
+  namespace: {{ .Values.namespace }}
+spec:
+  podSelector:
+    matchLabels:
+      app: chainmesh-redis
+  policyTypes:
+    - Ingress
+  ingress:
+    {{- range .Values.networkPolicy.allowedFrom }}
+    - from:
+        - podSelector:
+            matchLabels:
+              app: {{ .app }}
+      ports:
+        - protocol: TCP
+          port: {{ $.Values.service.port }}
+    {{- end }}
+{{- end }}

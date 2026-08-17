@@ -1,0 +1,29 @@
+name: Web Cleanup
+on:
+  workflow_dispatch:
+env:
+  NAMESPACE: chainmesh
+  RELEASE_NAME: web-release
+  DEPLOYMENT_NAME: chainmesh-web
+jobs:
+  cleanup:
+    runs-on: self-hosted
+    steps:
+      - name: Cleanup Helm Release and Resources
+        env:
+          REMOTE_SERVER: ${{ secrets.REMOTE_SERVER }}
+          REMOTE_USER: ${{ secrets.REMOTE_USER }}
+        run: |
+          mkdir -p ~/.ssh && chmod 700 ~/.ssh
+          ssh-keyscan -H "$REMOTE_SERVER" >> ~/.ssh/known_hosts 2>/dev/null || true
+          ssh -o StrictHostKeyChecking=yes "$REMOTE_USER@$REMOTE_SERVER" \
+            NAMESPACE="${{ env.NAMESPACE }}" \
+            RELEASE_NAME="${{ env.RELEASE_NAME }}" \
+            DEPLOYMENT_NAME="${{ env.DEPLOYMENT_NAME }}" \
+            bash << 'ENDSSH'
+          set -e
+          export KUBECONFIG=/etc/rancher/k3s/k3s.yaml
+          helm uninstall $RELEASE_NAME -n $NAMESPACE 2>/dev/null || echo "⚠️  Release not found"
+          docker rmi chainmesh-web:latest 2>/dev/null || true
+          k3s ctr images rm docker.io/library/chainmesh-web:latest 2>/dev/null || true
+          ENDSSH

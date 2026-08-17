@@ -1,0 +1,45 @@
+namespace: chainmesh
+replicaCount: 1
+image:
+  repository: chainmesh-web
+  tag: ""
+  pullPolicy: Never
+service:
+  port: 80
+  type: ClusterIP
+ingress:
+  className: traefik
+  host: chainmesh.nimbusurf.com
+  path: /
+  tlsSecretName: chainmesh-nimbusurf-tls
+env:
+  NODE_ENV: "production"
+resources:
+  limits:
+    cpu: "300m"
+    memory: "384Mi"
+  requests:
+    cpu: "50m"
+    memory: "128Mi"
+securityContext:
+  runAsNonRoot: true
+  runAsUser: 101
+  runAsGroup: 101
+  fsGroup: 101
+networkPolicy:
+  allowedTo:
+    - app: chainmesh-gateway
+      port: 8080
+probes:
+  readiness:
+    path: "/"
+    initialDelaySeconds: 10
+    periodSeconds: 10
+    timeoutSeconds: 5
+    failureThreshold: 3
+  liveness:
+    path: "/"
+    initialDelaySeconds: 20
+    periodSeconds: 30
+    timeoutSeconds: 10
+    failureThreshold: 3

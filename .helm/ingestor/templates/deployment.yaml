@@ -1,0 +1,44 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: chainmesh-ingestor
+  namespace: {{ .Values.namespace }}
+  labels:
+    app: chainmesh-ingestor
+spec:
+  replicas: {{ .Values.replicaCount }}
+  selector:
+    matchLabels:
+      app: chainmesh-ingestor
+  template:
+    metadata:
+      labels:
+        app: chainmesh-ingestor
+      annotations:
+        rollme: {{ randAlphaNum 5 | quote }}
+    spec:
+      securityContext: {{ toYaml .Values.securityContext | nindent 8 }}
+      containers:
+        - name: ingestor
+          image: "{{ .Values.image.repository }}:{{ .Values.image.tag }}"
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: ["ALL"]
+          envFrom: {{ toYaml .Values.envFrom | nindent 12 }}
+          env:
+            - name: DATABASE_URL
+              value: "postgres://$(DATABASE_USER):$(DATABASE_PASSWORD)@chainmesh-postgresql-svc:5432/$(POSTGRES_DB)"
+            {{- range $key, $value := .Values.env }}
+            - name: {{ $key }}
+              value: {{ $value | quote }}
+            {{- end }}
+          volumeMounts:
+            - name: tmp
+              mountPath: /tmp
+          resources: {{ toYaml .Values.resources | nindent 12 }}
+      volumes:
+        - name: tmp
+          emptyDir: {}
