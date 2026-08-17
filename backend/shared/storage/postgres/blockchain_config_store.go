@@ -14,9 +14,7 @@ FROM blockchain_configs ORDER BY name`,
 		return nil, err
 	}
 	defer rows.Close()
-
-	// FIX: Initialize as empty slice so JSON marshals to [] instead of null
-	configs := make([]model.BlockchainConfig, 0)
+	var configs []model.BlockchainConfig
 	for rows.Next() {
 		var c model.BlockchainConfig
 		if err := rows.Scan(&c.ID, &c.Name, &c.RPCEndpoint1, &c.RPCEndpoint2, &c.ChainID, &c.Enabled, &c.CreatedAt, &c.UpdatedAt); err != nil {
@@ -71,6 +69,30 @@ WHERE id = $6`,
 }
 
 func (d *DB) DeleteBlockchainConfig(ctx context.Context, id string) error {
-	_, err := d.pool.Exec(ctx, `DELETE FROM blockchain_configs WHERE id = $1`, id)
-	return err
+	// FIX: Use a transaction to unlink dependent records first, avoiding FK violations.
+	tx, err := d.pool.Begin(ctx)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback(ctx)
+
+	// 1. Unlink tenants referencing this network
+	_, err = tx.Exec(ctx, `UPDATE tenants SET blockchain_network_id = NULL WHERE blockchain_network_id = $1`, id)
+	if err != nil {
+		return err
+	}
+
+	// 2. Unlink blocks referencing this network
+	_, err = tx.Exec(ctx, `UPDATE blocks SET network_id = NULL WHERE network_id = $1`, id)
+	if err != nil {
+		return err
+	}
+
+	// 3. Now it is safe to delete the network config
+	_, err = tx.Exec(ctx, `DELETE FROM blockchain_configs WHERE id = $1`, id)
+	if err != nil {
+		return err
+	}
+
+	return tx.Commit(ctx)
 }
