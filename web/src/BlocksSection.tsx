@@ -21,6 +21,7 @@ export default function BlocksSection({ blocks }: BlocksSectionProps) {
           <table className="table">
             <thead>
               <tr>
+                <th>Network</th>
                 <th>Number</th>
                 <th>Hash</th>
                 <th>Txs</th>
@@ -29,7 +30,8 @@ export default function BlocksSection({ blocks }: BlocksSectionProps) {
             </thead>
             <tbody>
               {blocks.map(b => (
-                <tr key={b.hash}>
+                <tr key={`${b.network_id}-${b.hash}`}>
+                  <td className="mono muted">{b.network_name || b.network_id?.slice(0, 8) || '—'}</td>
                   <td className="mono">#{b.number.toLocaleString()}</td>
                   <td className="mono muted">{b.hash.slice(0, 18)}…</td>
                   <td>{b.tx_count}</td>

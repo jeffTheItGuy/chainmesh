@@ -1,17 +1,40 @@
-const STORAGE_KEY = 'blockmesh_admin_secret'
+const SECRET_KEY = 'blockmesh_admin_secret'
+const VIEWER_KEY = 'blockmesh_viewer_session'
 
-// Session-only by design: closing the tab clears it, so there's nothing
-// long-lived sitting in the browser. This is a UX gate, not the security
-// boundary - the admin API enforces the real check on every request
-// regardless of what the frontend does or doesn't send.
+export type Role = 'admin' | 'viewer' | null
+
+// Safely access sessionStorage in case the browser blocks it
+function safeGetItem(key: string): string | null {
+    try { return sessionStorage.getItem(key) } catch { return null }
+}
+function safeSetItem(key: string, value: string): void {
+    try { sessionStorage.setItem(key, value) } catch {}
+}
+function safeRemoveItem(key: string): void {
+    try { sessionStorage.removeItem(key) } catch {}
+}
+
 export function getStoredSecret(): string | null {
-  return sessionStorage.getItem(STORAGE_KEY)
+    return safeGetItem(SECRET_KEY)
 }
 
 export function storeSecret(secret: string): void {
-  sessionStorage.setItem(STORAGE_KEY, secret)
+    safeSetItem(SECRET_KEY, secret)
+    safeRemoveItem(VIEWER_KEY)
 }
 
-export function clearSecret(): void {
-  sessionStorage.removeItem(STORAGE_KEY)
+export function storeViewerSession(): void {
+    safeSetItem(VIEWER_KEY, '1')
+    safeRemoveItem(SECRET_KEY)
+}
+
+export function getRole(): Role {
+    if (getStoredSecret()) return 'admin'
+    if (safeGetItem(VIEWER_KEY)) return 'viewer'
+    return null
+}
+
+export function clearSession(): void {
+    safeRemoveItem(SECRET_KEY)
+    safeRemoveItem(VIEWER_KEY)
 }

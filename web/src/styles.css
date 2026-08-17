@@ -60,6 +60,7 @@ code,
 }
 
 /* Layout */
+
 .shell {
   min-height: 100vh;
   display: flex;
@@ -120,43 +121,8 @@ code,
   gap: 24px;
 }
 
-/* Status pill */
-.status-pill {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  padding: 5px 10px;
-  border-radius: 999px;
-  font-size: 12px;
-  font-weight: 500;
-  background: var(--success-soft);
-  color: var(--success);
-}
-
-.status-pill-down {
-  background: var(--danger-soft);
-  color: var(--danger);
-}
-
-.status-pill-dot {
-  width: 6px;
-  height: 6px;
-  border-radius: 50%;
-  background: currentColor;
-  animation: pulse 2s ease-in-out infinite;
-}
-
-@keyframes pulse {
-  0%,
-  100% {
-    opacity: 1;
-  }
-  50% {
-    opacity: 0.35;
-  }
-}
-
 /* Stats */
+
 .stat-grid {
   display: grid;
   grid-template-columns: repeat(3, 1fr);
@@ -191,6 +157,7 @@ code,
 }
 
 /* Card */
+
 .card {
   background: var(--bg-elevated);
   border: 1px solid var(--border);
@@ -230,6 +197,7 @@ code,
 }
 
 /* Table */
+
 .table-wrap {
   overflow-x: auto;
 }
@@ -267,6 +235,7 @@ code,
 }
 
 /* Forms */
+
 .field {
   display: flex;
   flex-direction: column;
@@ -312,6 +281,7 @@ code,
 }
 
 /* Buttons */
+
 .btn {
   border: 1px solid transparent;
   border-radius: var(--radius-sm);
@@ -354,6 +324,7 @@ code,
 }
 
 /* Alerts */
+
 .alert {
   padding: 12px 16px;
   border-radius: var(--radius-sm);
@@ -396,6 +367,7 @@ code,
 }
 
 /* Empty state */
+
 .empty-state {
   padding: 24px;
   text-align: center;
@@ -406,6 +378,7 @@ code,
 }
 
 /* Login */
+
 .login-shell {
   min-height: 100vh;
   display: flex;
@@ -461,9 +434,74 @@ code,
   gap: 12px;
 }
 
+/* Role gate */
+
+.gate-card {
+  width: 100%;
+  max-width: 420px;
+  background: var(--bg-elevated);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 32px;
+  display: flex;
+  flex-direction: column;
+}
+
+.gate-options {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  margin-top: 4px;
+}
+
+.gate-option {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  text-align: left;
+  padding: 16px;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  color: var(--text);
+  font-family: inherit;
+  cursor: pointer;
+  transition: border-color 0.15s ease, background 0.15s ease;
+}
+
+.gate-option:hover {
+  border-color: var(--accent);
+  background: var(--bg-elevated-2);
+}
+
+.gate-option-title {
+  font-weight: 600;
+  font-size: 14px;
+}
+
+.gate-option-sub {
+  font-size: 12px;
+  color: var(--text-muted);
+}
+
+.login-back {
+  align-self: flex-start;
+  margin-bottom: 12px;
+}
+
+/* Viewer hides the Tenants card — collapse the empty grid track */
+
+.stat-grid:has(> .stat-card:nth-child(2):last-child) {
+  grid-template-columns: repeat(2, 1fr);
+}
+
 /* Responsive */
+
 @media (max-width: 720px) {
   .stat-grid {
+    grid-template-columns: 1fr;
+  }
+  .stat-grid:has(> .stat-card:nth-child(2):last-child) {
     grid-template-columns: 1fr;
   }
   .content {

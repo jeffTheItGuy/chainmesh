@@ -1,5 +1,5 @@
 interface StatsStripProps {
-  tenantCount: number
+  tenantCount: number | null
   latestBlock: number | null
   totalTxCount: number
 }
@@ -7,10 +7,12 @@ interface StatsStripProps {
 export default function StatsStrip({ tenantCount, latestBlock, totalTxCount }: StatsStripProps) {
   return (
     <div className="stat-grid">
-      <div className="stat-card">
-        <span className="stat-label">Tenants</span>
-        <span className="stat-value">{tenantCount}</span>
-      </div>
+      {tenantCount !== null && (
+        <div className="stat-card">
+          <span className="stat-label">Tenants</span>
+          <span className="stat-value">{tenantCount}</span>
+        </div>
+      )}
       <div className="stat-card">
         <span className="stat-label">Latest block</span>
         <span className="stat-value stat-mono">

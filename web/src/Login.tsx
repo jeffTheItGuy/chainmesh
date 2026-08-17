@@ -4,9 +4,10 @@ import { storeSecret } from './auth'
 
 interface LoginProps {
   onAuthenticated: () => void
+  onBack?: () => void
 }
 
-export default function Login({ onAuthenticated }: LoginProps) {
+export default function Login({ onAuthenticated, onBack }: LoginProps) {
   const [secret, setSecret] = useState('')
   const [checking, setChecking] = useState(false)
   const [error, setError] = useState('')
@@ -34,13 +35,17 @@ export default function Login({ onAuthenticated }: LoginProps) {
   return (
     <div className="login-shell">
       <div className="login-card">
+        {onBack && (
+          <button type="button" className="btn btn-ghost btn-sm login-back" onClick={onBack}>
+            ← Back
+          </button>
+        )}
         <div className="login-mark">
           <span className="login-mark-dot" />
           BlockMesh
         </div>
         <h1 className="login-title">Sign in to the console</h1>
         <p className="login-sub">Enter the admin secret configured on this deployment.</p>
-
         <form onSubmit={submit} className="login-form">
           <label className="label" htmlFor="secret">Admin secret</label>
           <input

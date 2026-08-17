@@ -14,6 +14,11 @@ export default defineConfig({
         target: 'http://admin:8081',
         changeOrigin: true,
         rewrite: (path) => path.replace(/^\/api/, '')
+      },
+      '/gateway': {
+        target: 'http://gateway:8080',
+        changeOrigin: true,
+        rewrite: (path) => path.replace(/^\/gateway/, '')
       }
     }
   }

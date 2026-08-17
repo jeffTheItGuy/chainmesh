@@ -1,10 +1,9 @@
 interface TopBarProps {
-  healthStatus: string
+  role: 'admin' | 'viewer'
   onLogout: () => void
 }
 
-export default function TopBar({ healthStatus, onLogout }: TopBarProps) {
-  const healthy = healthStatus === 'ok'
+export default function TopBar({ role, onLogout }: TopBarProps) {
   return (
     <header className="topbar">
       <div className="topbar-mark">
@@ -13,10 +12,7 @@ export default function TopBar({ healthStatus, onLogout }: TopBarProps) {
         <span className="topbar-eyebrow">Gateway Console</span>
       </div>
       <div className="topbar-right">
-        <span className={`status-pill ${healthy ? 'status-pill-ok' : 'status-pill-down'}`}>
-          <span className="status-pill-dot" />
-          {healthy ? 'Admin API online' : `Admin API ${healthStatus}`}
-        </span>
+        <span className="topbar-eyebrow">{role === 'admin' ? 'Admin' : 'Viewer'}</span>
         <button className="btn btn-ghost" onClick={onLogout}>Log out</button>
       </div>
     </header>
