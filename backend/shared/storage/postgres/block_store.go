@@ -8,22 +8,23 @@ import (
 
 func (d *DB) StoreBlock(ctx context.Context, b *model.Block) error {
 	_, err := d.pool.Exec(ctx,
-		`INSERT INTO blocks (number, hash, parent_hash, timestamp, tx_count, raw_json)
-		 VALUES ($1, $2, $3, $4, $5, $6)
-		 ON CONFLICT (number) DO NOTHING`,
-		b.Number, b.Hash, b.ParentHash, b.Timestamp, b.TxCount, b.RawJSON,
+		`INSERT INTO blocks (number, hash, parent_hash, timestamp, tx_count, network_id, raw_json)
+		 VALUES ($1, $2, $3, $4, $5, $6, $7)
+		 ON CONFLICT (number, network_id) DO NOTHING`,
+		b.Number, b.Hash, b.ParentHash, b.Timestamp, b.TxCount, b.NetworkID, b.RawJSON,
 	)
 	return err
 }
 
-func (d *DB) GetLatestBlock(ctx context.Context) (*model.Block, error) {
+func (d *DB) GetLatestBlock(ctx context.Context, networkID string) (*model.Block, error) {
 	row := d.pool.QueryRow(ctx,
-		`SELECT number, hash, parent_hash, timestamp, tx_count, raw_json 
-		 FROM blocks ORDER BY number DESC LIMIT 1`,
+		`SELECT number, hash, parent_hash, timestamp, tx_count, network_id, raw_json
+		 FROM blocks WHERE network_id = $1 ORDER BY number DESC LIMIT 1`,
+		networkID,
 	)
 	b := &model.Block{}
 	var rawJSON []byte
-	err := row.Scan(&b.Number, &b.Hash, &b.ParentHash, &b.Timestamp, &b.TxCount, &rawJSON)
+	err := row.Scan(&b.Number, &b.Hash, &b.ParentHash, &b.Timestamp, &b.TxCount, &b.NetworkID, &rawJSON)
 	if err != nil {
 		return nil, err
 	}
@@ -33,8 +34,10 @@ func (d *DB) GetLatestBlock(ctx context.Context) (*model.Block, error) {
 
 func (d *DB) ListBlocks(ctx context.Context, limit int) ([]model.Block, error) {
 	rows, err := d.pool.Query(ctx,
-		`SELECT number, hash, parent_hash, timestamp, tx_count 
-		 FROM blocks ORDER BY number DESC LIMIT $1`,
+		`SELECT b.number, b.hash, b.parent_hash, b.timestamp, b.tx_count, b.network_id, c.name as network_name
+		 FROM blocks b
+		 LEFT JOIN blockchain_configs c ON b.network_id = c.id
+		 ORDER BY b.number DESC LIMIT $1`,
 		limit,
 	)
 	if err != nil {
@@ -42,10 +45,10 @@ func (d *DB) ListBlocks(ctx context.Context, limit int) ([]model.Block, error) {
 	}
 	defer rows.Close()
 
-	var blocks []model.Block
+	blocks := make([]model.Block, 0, limit)
 	for rows.Next() {
 		var b model.Block
-		err := rows.Scan(&b.Number, &b.Hash, &b.ParentHash, &b.Timestamp, &b.TxCount)
+		err := rows.Scan(&b.Number, &b.Hash, &b.ParentHash, &b.Timestamp, &b.TxCount, &b.NetworkID, &b.NetworkName)
 		if err != nil {
 			return nil, err
 		}

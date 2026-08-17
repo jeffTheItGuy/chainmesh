@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"encoding/json"
 	"net/http"
 	"os"
 	"os/signal"
@@ -10,10 +11,11 @@ import (
 
 	"github.com/yourname/blockmesh/gateway/middleware"
 	"github.com/yourname/blockmesh/gateway/proxy"
-	"github.com/yourname/blockmesh/shared/blockchain"
 	"github.com/yourname/blockmesh/shared/logger"
+	"github.com/yourname/blockmesh/shared/statsrollup"
 	"github.com/yourname/blockmesh/shared/storage/postgres"
 	"github.com/yourname/blockmesh/shared/storage/redis"
+	"github.com/yourname/blockmesh/shared/telemetry"
 )
 
 func main() {
@@ -29,19 +31,51 @@ func main() {
 	cache := redis.New(os.Getenv("REDIS_ADDR"))
 	defer cache.Close()
 
-	endpoints := []string{os.Getenv("RPC_ENDPOINT_1")}
-	if ep2 := os.Getenv("RPC_ENDPOINT_2"); ep2 != "" {
-		endpoints = append(endpoints, ep2)
-	}
+	telemetryRecorder := telemetry.New(db, log, 10000)
+	telemetryRecorder.Start()
+	defer telemetryRecorder.Stop()
 
-	bc := blockchain.New(endpoints)
-	p := proxy.New(bc, db, cache, log)
+	rollupRefresher := statsrollup.New(db, log, time.Minute)
+	rollupRefresher.Start()
+	defer rollupRefresher.Stop()
+
+	manager := NewManager(db, log)
+
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	err = manager.Start(ctx)
+	cancel()
+	if err != nil {
+		log.Error("failed to start blockchain manager", "err", err)
+		os.Exit(1)
+	}
+	defer manager.Stop()
+
+	p := proxy.New(manager, db, cache, log, telemetryRecorder)
+
+	handler := middleware.RequestID(
+		middleware.Auth(db)(
+			middleware.RateLimit(cache)(p),
+		),
+	)
 
 	mux := http.NewServeMux()
-	handler := middleware.Auth(db)(middleware.RateLimit(cache)(p))
+
 	mux.Handle("/v1/", handler)
 
-	srv := &http.Server{Addr: ":8080", Handler: mux}
+	mux.HandleFunc("/health/nodes", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(manager.Health())
+	})
+
+	srv := &http.Server{
+		Addr:              ":8080",
+		Handler:           mux,
+		ReadHeaderTimeout: 10 * time.Second,
+		ReadTimeout:       30 * time.Second,
+		WriteTimeout:      60 * time.Second,
+		IdleTimeout:       120 * time.Second,
+	}
+
 	go func() {
 		log.Info("gateway starting", "addr", srv.Addr)
 		if err := srv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
@@ -53,7 +87,10 @@ func main() {
 	signal.Notify(sig, syscall.SIGINT, syscall.SIGTERM)
 	<-sig
 
-	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
-	defer cancel()
-	srv.Shutdown(ctx)
+	log.Info("shutting down gateway")
+
+	shutdownCtx, shutdownCancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer shutdownCancel()
+
+	srv.Shutdown(shutdownCtx)
 }

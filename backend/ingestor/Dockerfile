@@ -4,9 +4,9 @@ WORKDIR /app
 COPY go.mod go.sum* ./
 RUN go mod download
 COPY . .
-RUN CGO_ENABLED=0 GOOS=linux go build -o /bin/admin ./admin
+RUN CGO_ENABLED=0 GOOS=linux go build -o /bin/ingestor ./ingestor
+
 FROM alpine:3.20
 RUN apk add --no-cache ca-certificates
-COPY --from=build /bin/admin /usr/local/bin/admin
-EXPOSE 8081
-ENTRYPOINT ["/usr/local/bin/admin"]
+COPY --from=build /bin/ingestor /usr/local/bin/ingestor
+ENTRYPOINT ["/usr/local/bin/ingestor"]

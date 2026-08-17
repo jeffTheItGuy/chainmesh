@@ -1,0 +1,18 @@
+-- Multi-network support migration
+-- Run this after 002_blockchain_config.sql
+
+-- Allow multiple active configs: no schema change needed on blockchain_configs itself,
+-- but we remove the implicit single-row assumption in application code.
+
+-- Add network reference to tenants
+ALTER TABLE tenants ADD COLUMN IF NOT EXISTS blockchain_network_id UUID REFERENCES blockchain_configs(id);
+
+-- Add network reference to blocks
+ALTER TABLE blocks ADD COLUMN IF NOT EXISTS network_id UUID REFERENCES blockchain_configs(id);
+
+-- Change unique constraint on blocks to be per-network so different chains can have the same block number
+ALTER TABLE blocks DROP CONSTRAINT IF EXISTS blocks_number_key;
+ALTER TABLE blocks ADD CONSTRAINT blocks_number_network_key UNIQUE (number, network_id);
+
+-- Index for faster block listing by network
+CREATE INDEX IF NOT EXISTS idx_blocks_network_id ON blocks(network_id);
