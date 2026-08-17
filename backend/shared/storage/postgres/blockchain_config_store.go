@@ -2,21 +2,21 @@ package postgres
 
 import (
 	"context"
-
 	"github.com/yourname/blockmesh/shared/model"
 )
 
 func (d *DB) ListBlockchainConfigs(ctx context.Context) ([]model.BlockchainConfig, error) {
 	rows, err := d.pool.Query(ctx,
 		`SELECT id, name, rpc_endpoint_1, rpc_endpoint_2, chain_id, enabled, created_at, updated_at
-		 FROM blockchain_configs ORDER BY name`,
+FROM blockchain_configs ORDER BY name`,
 	)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
 
-	var configs []model.BlockchainConfig
+	// FIX: Initialize as empty slice so JSON marshals to [] instead of null
+	configs := make([]model.BlockchainConfig, 0)
 	for rows.Next() {
 		var c model.BlockchainConfig
 		if err := rows.Scan(&c.ID, &c.Name, &c.RPCEndpoint1, &c.RPCEndpoint2, &c.ChainID, &c.Enabled, &c.CreatedAt, &c.UpdatedAt); err != nil {
@@ -30,7 +30,7 @@ func (d *DB) ListBlockchainConfigs(ctx context.Context) ([]model.BlockchainConfi
 func (d *DB) GetBlockchainConfig(ctx context.Context, id string) (*model.BlockchainConfig, error) {
 	row := d.pool.QueryRow(ctx,
 		`SELECT id, name, rpc_endpoint_1, rpc_endpoint_2, chain_id, enabled, created_at, updated_at
-		 FROM blockchain_configs WHERE id = $1`,
+FROM blockchain_configs WHERE id = $1`,
 		id,
 	)
 	c := &model.BlockchainConfig{}
@@ -41,7 +41,7 @@ func (d *DB) GetBlockchainConfig(ctx context.Context, id string) (*model.Blockch
 func (d *DB) GetDefaultBlockchainConfig(ctx context.Context) (*model.BlockchainConfig, error) {
 	row := d.pool.QueryRow(ctx,
 		`SELECT id, name, rpc_endpoint_1, rpc_endpoint_2, chain_id, enabled, created_at, updated_at
-		 FROM blockchain_configs WHERE enabled = true ORDER BY created_at LIMIT 1`,
+FROM blockchain_configs WHERE enabled = true ORDER BY created_at LIMIT 1`,
 	)
 	c := &model.BlockchainConfig{}
 	err := row.Scan(&c.ID, &c.Name, &c.RPCEndpoint1, &c.RPCEndpoint2, &c.ChainID, &c.Enabled, &c.CreatedAt, &c.UpdatedAt)
@@ -51,8 +51,8 @@ func (d *DB) GetDefaultBlockchainConfig(ctx context.Context) (*model.BlockchainC
 func (d *DB) SaveBlockchainConfig(ctx context.Context, cfg *model.BlockchainConfig) (*model.BlockchainConfig, error) {
 	row := d.pool.QueryRow(ctx,
 		`INSERT INTO blockchain_configs (name, rpc_endpoint_1, rpc_endpoint_2, chain_id, enabled)
-		 VALUES ($1, $2, $3, $4, $5)
-		 RETURNING id, name, rpc_endpoint_1, rpc_endpoint_2, chain_id, enabled, created_at, updated_at`,
+VALUES ($1, $2, $3, $4, $5)
+RETURNING id, name, rpc_endpoint_1, rpc_endpoint_2, chain_id, enabled, created_at, updated_at`,
 		cfg.Name, cfg.RPCEndpoint1, cfg.RPCEndpoint2, cfg.ChainID, cfg.Enabled,
 	)
 	c := &model.BlockchainConfig{}
@@ -63,8 +63,8 @@ func (d *DB) SaveBlockchainConfig(ctx context.Context, cfg *model.BlockchainConf
 func (d *DB) UpdateBlockchainConfig(ctx context.Context, cfg *model.BlockchainConfig) error {
 	_, err := d.pool.Exec(ctx,
 		`UPDATE blockchain_configs
-		 SET name = $1, rpc_endpoint_1 = $2, rpc_endpoint_2 = $3, chain_id = $4, enabled = $5, updated_at = NOW()
-		 WHERE id = $6`,
+SET name = $1, rpc_endpoint_1 = $2, rpc_endpoint_2 = $3, chain_id = $4, enabled = $5, updated_at = NOW()
+WHERE id = $6`,
 		cfg.Name, cfg.RPCEndpoint1, cfg.RPCEndpoint2, cfg.ChainID, cfg.Enabled, cfg.ID,
 	)
 	return err

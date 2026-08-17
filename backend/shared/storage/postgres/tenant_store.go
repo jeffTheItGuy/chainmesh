@@ -2,38 +2,35 @@ package postgres
 
 import (
 	"context"
-
 	"github.com/yourname/blockmesh/shared/model"
 	"github.com/yourname/blockmesh/shared/util"
 )
 
 func (d *DB) GetTenantByAPIKey(ctx context.Context, key string) (*model.Tenant, error) {
 	hash := util.HashAPIKey(key)
-
 	row := d.pool.QueryRow(ctx,
 		`
-		WITH used_key AS (
-			UPDATE api_keys
-			SET last_used_at = NOW()
-			WHERE key_hash = $1
-			  AND revoked_at IS NULL
-			RETURNING tenant_id
-		)
-		SELECT
-			t.id,
-			t.name,
-			COALESCE(t.blockchain_network_id::text, ''),
-			COALESCE(t.quota_rpm, 0),
-			COALESCE(t.quota_rps, 0),
-			COALESCE(t.quota_daily, 0),
-			COALESCE(t.plan, 'free'),
-			t.created_at
-		FROM tenants t
-		JOIN used_key k ON t.id = k.tenant_id
-		`,
+WITH used_key AS (
+UPDATE api_keys
+SET last_used_at = NOW()
+WHERE key_hash = $1
+AND revoked_at IS NULL
+RETURNING tenant_id
+)
+SELECT
+t.id,
+t.name,
+COALESCE(t.blockchain_network_id::text, ''),
+COALESCE(t.quota_rpm, 0),
+COALESCE(t.quota_rps, 0),
+COALESCE(t.quota_daily, 0),
+COALESCE(t.plan, 'free'),
+t.created_at
+FROM tenants t
+JOIN used_key k ON t.id = k.tenant_id
+`,
 		hash,
 	)
-
 	t := &model.Tenant{}
 	err := row.Scan(
 		&t.ID,
@@ -48,28 +45,26 @@ func (d *DB) GetTenantByAPIKey(ctx context.Context, key string) (*model.Tenant, 
 	if err != nil {
 		return nil, err
 	}
-
 	return t, nil
 }
 
 func (d *DB) GetTenantByID(ctx context.Context, id string) (*model.Tenant, error) {
 	row := d.pool.QueryRow(ctx,
 		`
-		SELECT
-			id,
-			name,
-			COALESCE(blockchain_network_id::text, ''),
-			COALESCE(quota_rpm, 0),
-			COALESCE(quota_rps, 0),
-			COALESCE(quota_daily, 0),
-			COALESCE(plan, 'free'),
-			created_at
-		FROM tenants
-		WHERE id = $1
-		`,
+SELECT
+id,
+name,
+COALESCE(blockchain_network_id::text, ''),
+COALESCE(quota_rpm, 0),
+COALESCE(quota_rps, 0),
+COALESCE(quota_daily, 0),
+COALESCE(plan, 'free'),
+created_at
+FROM tenants
+WHERE id = $1
+`,
 		id,
 	)
-
 	t := &model.Tenant{}
 	err := row.Scan(
 		&t.ID,
@@ -84,32 +79,32 @@ func (d *DB) GetTenantByID(ctx context.Context, id string) (*model.Tenant, error
 	if err != nil {
 		return nil, err
 	}
-
 	return t, nil
 }
 
 func (d *DB) ListTenants(ctx context.Context) ([]model.Tenant, error) {
 	rows, err := d.pool.Query(ctx,
 		`
-		SELECT
-			id,
-			name,
-			COALESCE(blockchain_network_id::text, ''),
-			COALESCE(quota_rpm, 0),
-			COALESCE(quota_rps, 0),
-			COALESCE(quota_daily, 0),
-			COALESCE(plan, 'free'),
-			created_at
-		FROM tenants
-		ORDER BY created_at DESC
-		`,
+SELECT
+id,
+name,
+COALESCE(blockchain_network_id::text, ''),
+COALESCE(quota_rpm, 0),
+COALESCE(quota_rps, 0),
+COALESCE(quota_daily, 0),
+COALESCE(plan, 'free'),
+created_at
+FROM tenants
+ORDER BY created_at DESC
+`,
 	)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
 
-	var tenants []model.Tenant
+	// FIX: Initialize as empty slice so JSON marshals to [] instead of null
+	tenants := make([]model.Tenant, 0)
 	for rows.Next() {
 		var t model.Tenant
 		if err := rows.Scan(
@@ -126,7 +121,6 @@ func (d *DB) ListTenants(ctx context.Context) ([]model.Tenant, error) {
 		}
 		tenants = append(tenants, t)
 	}
-
 	return tenants, nil
 }
 
@@ -143,7 +137,6 @@ func (d *DB) CreateTenantWithKey(
 	if plan == "" {
 		plan = "free"
 	}
-
 	tx, err := d.pool.Begin(ctx)
 	if err != nil {
 		return nil, err
@@ -158,25 +151,25 @@ func (d *DB) CreateTenantWithKey(
 	t := &model.Tenant{}
 	err = tx.QueryRow(ctx,
 		`
-		INSERT INTO tenants (
-			name,
-			blockchain_network_id,
-			quota_rpm,
-			quota_rps,
-			quota_daily,
-			plan
-		)
-		VALUES ($1, $2, $3, $4, $5, $6)
-		RETURNING
-			id,
-			name,
-			COALESCE(blockchain_network_id::text, ''),
-			quota_rpm,
-			quota_rps,
-			quota_daily,
-			plan,
-			created_at
-		`,
+INSERT INTO tenants (
+name,
+blockchain_network_id,
+quota_rpm,
+quota_rps,
+quota_daily,
+plan
+)
+VALUES ($1, $2, $3, $4, $5, $6)
+RETURNING
+id,
+name,
+COALESCE(blockchain_network_id::text, ''),
+quota_rpm,
+quota_rps,
+quota_daily,
+plan,
+created_at
+`,
 		name,
 		networkID,
 		quotaRPM,
@@ -199,17 +192,16 @@ func (d *DB) CreateTenantWithKey(
 
 	keyHash := util.HashAPIKey(plainAPIKey)
 	keyPrefix := util.APIKeyPrefix(plainAPIKey)
-
 	_, err = tx.Exec(ctx,
 		`
-		INSERT INTO api_keys (
-			tenant_id,
-			name,
-			key_hash,
-			key_prefix
-		)
-		VALUES ($1, $2, $3, $4)
-		`,
+INSERT INTO api_keys (
+tenant_id,
+name,
+key_hash,
+key_prefix
+)
+VALUES ($1, $2, $3, $4)
+`,
 		t.ID,
 		"default",
 		keyHash,
@@ -222,7 +214,6 @@ func (d *DB) CreateTenantWithKey(
 	if err := tx.Commit(ctx); err != nil {
 		return nil, err
 	}
-
 	return t, nil
 }
 
@@ -240,19 +231,18 @@ func (d *DB) UpdateTenant(
 	if blockchainNetworkID != "" {
 		networkID = blockchainNetworkID
 	}
-
 	_, err := d.pool.Exec(ctx,
 		`
-		UPDATE tenants
-		SET
-			name = $2,
-			blockchain_network_id = $3,
-			quota_rpm = $4,
-			quota_rps = $5,
-			quota_daily = $6,
-			plan = $7
-		WHERE id = $1
-		`,
+UPDATE tenants
+SET
+name = $2,
+blockchain_network_id = $3,
+quota_rpm = $4,
+quota_rps = $5,
+quota_daily = $6,
+plan = $7
+WHERE id = $1
+`,
 		id,
 		name,
 		networkID,
@@ -278,11 +268,11 @@ func (d *DB) RotateAPIKey(ctx context.Context, tenantID string, plainAPIKey stri
 
 	_, err = tx.Exec(ctx,
 		`
-		UPDATE api_keys
-		SET revoked_at = NOW()
-		WHERE tenant_id = $1
-		  AND revoked_at IS NULL
-		`,
+UPDATE api_keys
+SET revoked_at = NOW()
+WHERE tenant_id = $1
+AND revoked_at IS NULL
+`,
 		tenantID,
 	)
 	if err != nil {
@@ -291,17 +281,16 @@ func (d *DB) RotateAPIKey(ctx context.Context, tenantID string, plainAPIKey stri
 
 	keyHash := util.HashAPIKey(plainAPIKey)
 	keyPrefix := util.APIKeyPrefix(plainAPIKey)
-
 	_, err = tx.Exec(ctx,
 		`
-		INSERT INTO api_keys (
-			tenant_id,
-			name,
-			key_hash,
-			key_prefix
-		)
-		VALUES ($1, $2, $3, $4)
-		`,
+INSERT INTO api_keys (
+tenant_id,
+name,
+key_hash,
+key_prefix
+)
+VALUES ($1, $2, $3, $4)
+`,
 		tenantID,
 		"rotated",
 		keyHash,

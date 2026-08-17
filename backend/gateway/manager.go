@@ -31,7 +31,6 @@ type Manager struct {
 
 func NewManager(db *postgres.DB, log *slog.Logger) *Manager {
 	healthCtx, healthCancel := context.WithCancel(context.Background())
-
 	return &Manager{
 		db:           db,
 		log:          log,
@@ -47,14 +46,11 @@ func (m *Manager) Start(ctx context.Context) error {
 		return err
 	}
 
-	m.mu.RLock()
-	count := len(m.clients)
-	m.mu.RUnlock()
-
-	if count == 0 {
-		return fmt.Errorf("no enabled blockchain networks configured")
-	}
-
+	// FIX: Allow the gateway to start even if no blockchain networks are configured yet.
+	// This prevents a chicken-and-egg problem where you can't access the Admin UI
+	// to add a network because the gateway refuses to start without one.
+	// The proxy layer already handles missing networks gracefully by returning
+	// a 503 Service Unavailable error to clients if a request comes in.
 	go m.loop()
 	return nil
 }
@@ -87,16 +83,14 @@ func (m *Manager) reload(ctx context.Context) error {
 	defer m.mu.Unlock()
 
 	desired := make(map[string]bool)
-
 	for _, cfg := range configs {
 		if !cfg.Enabled {
 			continue
 		}
-
 		desired[cfg.ID] = true
+
 		sig := configSignature(cfg)
 		oldSig, exists := m.sigs[cfg.ID]
-
 		if exists && oldSig == sig {
 			continue
 		}
@@ -129,7 +123,6 @@ func (m *Manager) reload(ctx context.Context) error {
 			client.StopHealthChecks()
 			delete(m.clients, id)
 			delete(m.sigs, id)
-
 			m.log.Info("blockchain client removed", "network_id", id)
 		}
 	}
@@ -156,7 +149,6 @@ func (m *Manager) Health() []NetworkHealth {
 			Nodes:     client.HealthyEndpoints(),
 		})
 	}
-
 	return out
 }
 
@@ -169,7 +161,6 @@ func (m *Manager) Stop() {
 	for _, client := range m.clients {
 		client.StopHealthChecks()
 	}
-
 	m.clients = make(map[string]*blockchain.Client)
 	m.sigs = make(map[string]string)
 }
