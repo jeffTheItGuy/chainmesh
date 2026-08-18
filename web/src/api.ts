@@ -53,7 +53,7 @@ export interface TestConnectionResult {
 export interface EndpointHealth {
   url: string
   healthy: boolean
-  latency: number
+  latency_ms: number
   last_check: string
   consecutive_fails: number
   total_requests: number
@@ -227,6 +227,12 @@ export const api = {
     request<Usage[]>(
       `/api/usage${day ? `?day=${encodeURIComponent(day)}` : ''}`,
       { headers: { 'X-Tenant-API-Key': apiKey } }
+    ),
+
+    // Admin-only usage lookup by tenant ID
+  getTenantUsage: (tenantId: string, day?: string) =>
+    request<Usage[]>(
+      `/api/tenants/${tenantId}/usage${day ? `?day=${encodeURIComponent(day)}` : ''}`
     ),
 
   /* ----------------------- Monitoring ---------------------------- */

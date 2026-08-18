@@ -136,7 +136,7 @@ export default function App() {
             onTenantUpdated={updated => setTenants(prev => prev.map(t => t.id === updated.id ? updated : t))}
           />
         )}
-        {role === 'admin' && <UsageSection />}
+        {role === 'admin' && <UsageSection tenants={tenants} />}
         <BlocksSection blocks={blocks} hasLoaded={hasLoaded} />
       </main>
     </div>

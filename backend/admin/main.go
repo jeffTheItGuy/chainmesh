@@ -43,7 +43,6 @@ func writeErr(w http.ResponseWriter, status int, message string) {
 
 func main() {
 	log := logger.New()
-
 	adminSecret := os.Getenv("ADMIN_SECRET")
 	if adminSecret == "" {
 		log.Error("ADMIN_SECRET is not set - refusing to start with an unauthenticated admin API")
@@ -68,10 +67,8 @@ func main() {
 		if rangeName == "" {
 			rangeName = "1h"
 		}
-
 		now := time.Now()
 		var from time.Time
-
 		switch rangeName {
 		case "15m":
 			from = now.Add(-15 * time.Minute)
@@ -90,7 +87,6 @@ func main() {
 			writeErr(w, http.StatusInternalServerError, "database error")
 			return
 		}
-
 		writeJSON(w, http.StatusOK, summary)
 	}))
 
@@ -103,10 +99,8 @@ func main() {
 				return
 			}
 			writeJSON(w, http.StatusOK, tenants)
-
 		case http.MethodPost:
 			r.Body = http.MaxBytesReader(w, r.Body, maxAdminBodyBytes)
-
 			var req struct {
 				Name                string `json:"name"`
 				QuotaRPM            int    `json:"quota_rpm"`
@@ -115,33 +109,26 @@ func main() {
 				Plan                string `json:"plan"`
 				BlockchainNetworkID string `json:"blockchain_network_id"`
 			}
-
 			if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 				writeErr(w, http.StatusBadRequest, "invalid json")
 				return
 			}
-
 			if req.Name == "" {
 				writeErr(w, http.StatusBadRequest, "name is required")
 				return
 			}
-
 			if req.Plan == "" {
 				req.Plan = "free"
 			}
-
 			if req.QuotaRPM <= 0 {
 				req.QuotaRPM = 100
 			}
-
 			if req.QuotaRPS <= 0 {
 				req.QuotaRPS = 10
 			}
-
 			if req.QuotaDaily <= 0 {
 				req.QuotaDaily = 10000
 			}
-
 			if req.BlockchainNetworkID == "" {
 				defaultCfg, err := db.GetDefaultBlockchainConfig(r.Context())
 				if err != nil || defaultCfg == nil {
@@ -152,7 +139,6 @@ func main() {
 			}
 
 			key := util.GenerateAPIKey()
-
 			tenant, err := db.CreateTenantWithKey(
 				r.Context(),
 				req.Name,
@@ -167,7 +153,6 @@ func main() {
 				writeErr(w, http.StatusInternalServerError, "database error")
 				return
 			}
-
 			writeJSON(w, http.StatusCreated, map[string]any{
 				"id":                    tenant.ID,
 				"name":                  tenant.Name,
@@ -179,7 +164,6 @@ func main() {
 				"blockchain_network_id": tenant.BlockchainNetworkID,
 				"created_at":            tenant.CreatedAt,
 			})
-
 		default:
 			writeErr(w, http.StatusMethodNotAllowed, "method not allowed")
 		}
@@ -188,12 +172,10 @@ func main() {
 	mux.HandleFunc("/tenants/", adminAuth(adminSecret, func(w http.ResponseWriter, r *http.Request) {
 		path := strings.TrimPrefix(r.URL.Path, "/tenants/")
 		parts := strings.Split(path, "/")
-
 		if len(parts) == 0 || parts[0] == "" {
 			writeErr(w, http.StatusBadRequest, "tenant id required")
 			return
 		}
-
 		tenantID := parts[0]
 
 		if len(parts) == 1 {
@@ -205,16 +187,13 @@ func main() {
 					return
 				}
 				writeJSON(w, http.StatusOK, tenant)
-
 			case http.MethodPut:
 				r.Body = http.MaxBytesReader(w, r.Body, maxAdminBodyBytes)
-
 				existing, err := db.GetTenantByID(r.Context(), tenantID)
 				if err != nil {
 					writeErr(w, http.StatusNotFound, "tenant not found")
 					return
 				}
-
 				var req struct {
 					Name                string `json:"name"`
 					QuotaRPM            int    `json:"quota_rpm"`
@@ -223,32 +202,25 @@ func main() {
 					Plan                string `json:"plan"`
 					BlockchainNetworkID string `json:"blockchain_network_id"`
 				}
-
 				if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 					writeErr(w, http.StatusBadRequest, "invalid json")
 					return
 				}
-
 				if req.Name == "" {
 					req.Name = existing.Name
 				}
-
 				if req.QuotaRPM <= 0 {
 					req.QuotaRPM = existing.QuotaRPM
 				}
-
 				if req.QuotaRPS <= 0 {
 					req.QuotaRPS = existing.QuotaRPS
 				}
-
 				if req.QuotaDaily <= 0 {
 					req.QuotaDaily = existing.QuotaDaily
 				}
-
 				if req.Plan == "" {
 					req.Plan = existing.Plan
 				}
-
 				if req.BlockchainNetworkID == "" {
 					req.BlockchainNetworkID = existing.BlockchainNetworkID
 				}
@@ -267,22 +239,17 @@ func main() {
 					writeErr(w, http.StatusInternalServerError, "database error")
 					return
 				}
-
 				writeJSON(w, http.StatusOK, map[string]any{"updated": true})
-
 			case http.MethodDelete:
 				err := db.DeleteTenant(r.Context(), tenantID)
 				if err != nil {
 					writeErr(w, http.StatusInternalServerError, "database error")
 					return
 				}
-
 				writeJSON(w, http.StatusOK, map[string]any{"deleted": true})
-
 			default:
 				writeErr(w, http.StatusMethodNotAllowed, "method not allowed")
 			}
-
 			return
 		}
 
@@ -291,56 +258,55 @@ func main() {
 				writeErr(w, http.StatusMethodNotAllowed, "method not allowed")
 				return
 			}
-
 			key := util.GenerateAPIKey()
 			err := db.RotateAPIKey(r.Context(), tenantID, key)
 			if err != nil {
 				writeErr(w, http.StatusInternalServerError, "database error")
 				return
 			}
-
 			writeJSON(w, http.StatusOK, map[string]any{
 				"api_key": key,
 			})
 			return
 		}
 
+		// NEW: Admin usage lookup by tenant ID
+		if len(parts) == 2 && parts[1] == "usage" {
+			if r.Method != http.MethodGet {
+				writeErr(w, http.StatusMethodNotAllowed, "method not allowed")
+				return
+			}
+			dayStr := r.URL.Query().Get("day")
+			day := time.Now()
+			if dayStr != "" {
+				var err error
+				day, err = time.Parse("2006-01-02", dayStr)
+				if err != nil {
+					writeErr(w, http.StatusBadRequest, "invalid day format, use YYYY-MM-DD")
+					return
+				}
+			}
+
+			// Verify tenant exists
+			_, err := db.GetTenantByID(r.Context(), tenantID)
+			if err != nil {
+				writeErr(w, http.StatusNotFound, "tenant not found")
+				return
+			}
+
+			usage, err := db.GetDailyUsage(r.Context(), tenantID, day)
+			if err != nil {
+				writeErr(w, http.StatusInternalServerError, "database error")
+				return
+			}
+			writeJSON(w, http.StatusOK, usage)
+			return
+		}
+
 		writeErr(w, http.StatusNotFound, "not found")
 	}))
 
-	mux.HandleFunc("/usage", adminAuth(adminSecret, func(w http.ResponseWriter, r *http.Request) {
-		dayStr := r.URL.Query().Get("day")
-		day := time.Now()
-
-		if dayStr != "" {
-			var err error
-			day, err = time.Parse("2006-01-02", dayStr)
-			if err != nil {
-				writeErr(w, http.StatusBadRequest, "invalid day format, use YYYY-MM-DD")
-				return
-			}
-		}
-
-		apiKey := r.URL.Query().Get("api_key")
-		if apiKey == "" {
-			writeErr(w, http.StatusBadRequest, "api_key required")
-			return
-		}
-
-		tenant, err := db.GetTenantByAPIKey(r.Context(), apiKey)
-		if err != nil {
-			writeErr(w, http.StatusBadRequest, "invalid api_key")
-			return
-		}
-
-		usage, err := db.GetDailyUsage(r.Context(), tenant.ID, day)
-		if err != nil {
-			writeErr(w, http.StatusInternalServerError, "database error")
-			return
-		}
-
-		writeJSON(w, http.StatusOK, usage)
-	}))
+	// REMOVED: The old /usage endpoint that required the API key in the query string
 
 	mux.HandleFunc("/blocks", func(w http.ResponseWriter, r *http.Request) {
 		blocks, err := db.ListBlocks(r.Context(), 50)
@@ -356,19 +322,15 @@ func main() {
 			writeErr(w, http.StatusMethodNotAllowed, "method not allowed")
 			return
 		}
-
 		r.Body = http.MaxBytesReader(w, r.Body, maxAdminBodyBytes)
-
 		var req struct {
 			RPCEndpoint1 string `json:"rpc_endpoint_1"`
 			RPCEndpoint2 string `json:"rpc_endpoint_2"`
 		}
-
 		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 			writeErr(w, http.StatusBadRequest, "invalid json")
 			return
 		}
-
 		if req.RPCEndpoint1 == "" {
 			writeErr(w, http.StatusBadRequest, "rpc_endpoint_1 is required")
 			return
@@ -395,7 +357,6 @@ func main() {
 			if rpcResp.Error != nil {
 				msg = rpcResp.Error.Message
 			}
-
 			writeJSON(w, http.StatusOK, map[string]any{
 				"connected": false,
 				"error":     msg,
@@ -421,10 +382,8 @@ func main() {
 				return
 			}
 			writeJSON(w, http.StatusOK, configs)
-
 		case http.MethodPost:
 			r.Body = http.MaxBytesReader(w, r.Body, maxAdminBodyBytes)
-
 			var req struct {
 				Name         string `json:"name"`
 				RPCEndpoint1 string `json:"rpc_endpoint_1"`
@@ -432,17 +391,14 @@ func main() {
 				ChainID      string `json:"chain_id"`
 				Enabled      bool   `json:"enabled"`
 			}
-
 			if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 				writeErr(w, http.StatusBadRequest, "invalid json")
 				return
 			}
-
 			if req.Name == "" || req.RPCEndpoint1 == "" {
 				writeErr(w, http.StatusBadRequest, "name and rpc_endpoint_1 are required")
 				return
 			}
-
 			cfg := &model.BlockchainConfig{
 				Name:         req.Name,
 				RPCEndpoint1: req.RPCEndpoint1,
@@ -450,15 +406,12 @@ func main() {
 				ChainID:      req.ChainID,
 				Enabled:      req.Enabled,
 			}
-
 			saved, err := db.SaveBlockchainConfig(r.Context(), cfg)
 			if err != nil {
 				writeErr(w, http.StatusInternalServerError, "database error")
 				return
 			}
-
 			writeJSON(w, http.StatusCreated, saved)
-
 		default:
 			writeErr(w, http.StatusMethodNotAllowed, "method not allowed")
 		}
@@ -470,7 +423,6 @@ func main() {
 			writeErr(w, http.StatusBadRequest, "network id required")
 			return
 		}
-
 		switch r.Method {
 		case http.MethodGet:
 			cfg, err := db.GetBlockchainConfig(r.Context(), id)
@@ -479,10 +431,8 @@ func main() {
 				return
 			}
 			writeJSON(w, http.StatusOK, cfg)
-
 		case http.MethodPut:
 			r.Body = http.MaxBytesReader(w, r.Body, maxAdminBodyBytes)
-
 			var req struct {
 				Name         string `json:"name"`
 				RPCEndpoint1 string `json:"rpc_endpoint_1"`
@@ -490,17 +440,14 @@ func main() {
 				ChainID      string `json:"chain_id"`
 				Enabled      bool   `json:"enabled"`
 			}
-
 			if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 				writeErr(w, http.StatusBadRequest, "invalid json")
 				return
 			}
-
 			if req.Name == "" || req.RPCEndpoint1 == "" {
 				writeErr(w, http.StatusBadRequest, "name and rpc_endpoint_1 are required")
 				return
 			}
-
 			cfg := &model.BlockchainConfig{
 				ID:           id,
 				Name:         req.Name,
@@ -509,22 +456,17 @@ func main() {
 				ChainID:      req.ChainID,
 				Enabled:      req.Enabled,
 			}
-
 			if err := db.UpdateBlockchainConfig(r.Context(), cfg); err != nil {
 				writeErr(w, http.StatusInternalServerError, "database error")
 				return
 			}
-
 			writeJSON(w, http.StatusOK, map[string]any{"updated": true})
-
 		case http.MethodDelete:
 			if err := db.DeleteBlockchainConfig(r.Context(), id); err != nil {
 				writeErr(w, http.StatusInternalServerError, "database error")
 				return
 			}
-
 			writeJSON(w, http.StatusOK, map[string]any{"deleted": true})
-
 		default:
 			writeErr(w, http.StatusMethodNotAllowed, "method not allowed")
 		}
@@ -550,6 +492,5 @@ func main() {
 
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
-
 	srv.Shutdown(ctx)
 }

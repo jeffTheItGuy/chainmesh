@@ -41,10 +41,6 @@ export default function NodeStatusSection() {
 
   usePolling(load, 10000)
 
-  const latencyMs = (latency: number) => {
-    return Math.max(0, Math.round(latency / 1_000_000))
-  }
-
   if (!hasLoaded) {
     return <div className="empty-state">Loading node status…</div>
   }
@@ -93,7 +89,7 @@ export default function NodeStatusSection() {
                           <span style={{ color: 'var(--danger)' }}>Down</span>
                         )}
                       </td>
-                      <td className="mono">{latencyMs(node.latency)}ms</td>
+                      <td className="mono">{node.latency_ms}ms</td>
                       <td>{node.consecutive_fails}</td>
                       <td>{node.total_requests}</td>
                     </tr>

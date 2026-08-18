@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"net/http"
+	"net/url"
 	"os"
 	"os/signal"
 	"syscall"
@@ -17,6 +18,30 @@ import (
 	"github.com/yourname/blockmesh/shared/storage/redis"
 	"github.com/yourname/blockmesh/shared/telemetry"
 )
+
+type SafeEndpointHealth struct {
+	URL              string    `json:"url"`
+	Healthy          bool      `json:"healthy"`
+	LatencyMs        int64     `json:"latency_ms"`
+	LastCheck        time.Time `json:"last_check"`
+	ConsecutiveFails int       `json:"consecutive_fails"`
+	TotalRequests    int64     `json:"total_requests"`
+	TotalFailures    int64     `json:"total_failures"`
+}
+
+type SafeNetworkHealth struct {
+	NetworkID string               `json:"network_id"`
+	Nodes     []SafeEndpointHealth `json:"nodes"`
+}
+
+func redactURL(rawURL string) string {
+	u, err := url.Parse(rawURL)
+	if err != nil {
+		return "redacted-endpoint"
+	}
+	// Keep the host (e.g., eth-mainnet.g.alchemy.com) but hide the path/API key
+	return u.Host + "/***"
+}
 
 func main() {
 	log := logger.New()
@@ -59,12 +84,34 @@ func main() {
 	)
 
 	mux := http.NewServeMux()
-
 	mux.Handle("/v1/", handler)
 
 	mux.HandleFunc("/health/nodes", func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(manager.Health())
+		
+		health := manager.Health()
+		safeHealth := make([]SafeNetworkHealth, len(health))
+		
+		for i, net := range health {
+			safeNodes := make([]SafeEndpointHealth, len(net.Nodes))
+			for j, node := range net.Nodes {
+				safeNodes[j] = SafeEndpointHealth{
+					URL:              redactURL(node.URL),
+					Healthy:          node.Healthy,
+					LatencyMs:        node.Latency.Milliseconds(), // Convert ns to ms
+					LastCheck:        node.LastCheck,
+					ConsecutiveFails: node.ConsecutiveFails,
+					TotalRequests:    node.TotalRequests,
+					TotalFailures:    node.TotalFailures,
+				}
+			}
+			safeHealth[i] = SafeNetworkHealth{
+				NetworkID: net.NetworkID,
+				Nodes:     safeNodes,
+			}
+		}
+		
+		json.NewEncoder(w).Encode(safeHealth)
 	})
 
 	srv := &http.Server{
@@ -88,9 +135,7 @@ func main() {
 	<-sig
 
 	log.Info("shutting down gateway")
-
 	shutdownCtx, shutdownCancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer shutdownCancel()
-
 	srv.Shutdown(shutdownCtx)
 }
