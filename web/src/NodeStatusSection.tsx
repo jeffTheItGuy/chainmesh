@@ -1,35 +1,52 @@
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useState, useRef, useEffect } from 'react'
 import { api, type NetworkHealth } from './api'
+import { usePolling } from './hooks/usePolling'
 
 export default function NodeStatusSection() {
   const [health, setHealth] = useState<NetworkHealth[]>([])
   const [error, setError] = useState('')
   const [loading, setLoading] = useState(false)
+  const [hasLoaded, setHasLoaded] = useState(false)
 
-  const load = useCallback(async () => {
-    setLoading(true)
+  const reqId = useRef(0)
+  const mounted = useRef(true)
+
+  useEffect(() => {
+    return () => { mounted.current = false }
+  }, [])
+
+  const load = useCallback(async (background = false) => {
+    const id = ++reqId.current
+    if (!background) setLoading(true)
     setError('')
-
     try {
       const data = await api.getNodeHealth()
-      setHealth(data)
+      if (!mounted.current) return
+      if (id === reqId.current) {
+        setHealth(data || [])
+        setHasLoaded(true)
+      }
     } catch (err) {
-      setHealth([])
-      setError(err instanceof Error ? err.message : 'Failed to load node health')
+      if (!mounted.current) return
+      if (id === reqId.current) {
+        setHealth([])
+        setError(err instanceof Error ? err.message : 'Failed to load node health')
+        setHasLoaded(true)
+      }
     } finally {
-      setLoading(false)
+      if (!mounted.current) return
+      if (id === reqId.current && !background) setLoading(false)
     }
   }, [])
 
-  useEffect(() => {
-    load()
-    const interval = setInterval(load, 10000)
-    return () => clearInterval(interval)
-  }, [load])
+  usePolling(load, 10000)
 
   const latencyMs = (latency: number) => {
-    // Go time.Duration marshals as nanoseconds.
     return Math.max(0, Math.round(latency / 1_000_000))
+  }
+
+  if (!hasLoaded) {
+    return <div className="empty-state">Loading node status…</div>
   }
 
   return (
@@ -39,14 +56,11 @@ export default function NodeStatusSection() {
           <span className="eyebrow">Infrastructure</span>
           <h2 className="card-title">Node status</h2>
         </div>
-
-        <button className="btn btn-ghost" onClick={load} disabled={loading}>
+        <button className="btn btn-ghost" onClick={() => load(false)} disabled={loading}>
           {loading ? 'Refreshing…' : 'Refresh'}
         </button>
       </div>
-
       {error && <div className="alert alert-error">{error}</div>}
-
       {health.length === 0 ? (
         <div className="empty-state">No node health data available.</div>
       ) : (
@@ -56,7 +70,6 @@ export default function NodeStatusSection() {
               <div className="eyebrow" style={{ marginBottom: 8 }}>
                 Network {network.network_id.slice(0, 8)}
               </div>
-
               <table className="table">
                 <thead>
                   <tr>
@@ -70,8 +83,8 @@ export default function NodeStatusSection() {
                 <tbody>
                   {network.nodes.map(node => (
                     <tr key={node.url}>
-                      <td className="mono muted">
-                        {node.url.replace(/^https:\/\//, '').slice(0, 32)}…
+                      <td className="mono muted truncate" title={node.url}>
+                        {node.url.replace(/^https?:\/\//, '')}
                       </td>
                       <td>
                         {node.healthy ? (

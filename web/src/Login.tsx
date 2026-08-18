@@ -25,8 +25,8 @@ export default function Login({ onAuthenticated, onBack }: LoginProps) {
       }
       storeSecret(secret)
       onAuthenticated()
-    } catch {
-      setError('Could not reach the admin API. Is it running?')
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Could not reach the admin API. Is it running?')
     } finally {
       setChecking(false)
     }

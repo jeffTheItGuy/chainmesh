@@ -3,6 +3,7 @@ import { api, type Usage } from './api'
 
 export default function UsageSection() {
   const [apiKey, setApiKey] = useState('')
+  const [day, setDay] = useState('')
   const [usage, setUsage] = useState<Usage[] | null>(null)
   const [error, setError] = useState('')
   const [loading, setLoading] = useState(false)
@@ -13,7 +14,7 @@ export default function UsageSection() {
     setLoading(true)
     setError('')
     try {
-      const data = await api.getUsage(apiKey)
+      const data = await api.getUsage(apiKey, day || undefined)
       setUsage(data)
     } catch (err) {
       setUsage(null)
@@ -31,8 +32,7 @@ export default function UsageSection() {
           <h2 className="card-title">Usage lookup</h2>
         </div>
       </div>
-      <p className="card-hint">Paste a tenant's API key to see today's request volume.</p>
-
+      <p className="card-hint">Paste a tenant's API key to see request volume.</p>
       <form onSubmit={lookup} className="inline-form inline-form-row">
         <input
           className="input"
@@ -40,16 +40,22 @@ export default function UsageSection() {
           onChange={e => setApiKey(e.target.value)}
           placeholder="bm_live_…"
         />
+        <input
+          type="date"
+          className="input"
+          value={day}
+          onChange={e => setDay(e.target.value)}
+          title="Leave empty for today"
+          style={{ maxWidth: 180 }}
+        />
         <button type="submit" className="btn btn-primary" disabled={!apiKey || loading}>
           {loading ? 'Looking up…' : 'Look up'}
         </button>
       </form>
-
       {error && <div className="alert alert-error">{error}</div>}
-
       {usage && (
         usage.length === 0 ? (
-          <div className="empty-state">No usage recorded for this key today.</div>
+          <div className="empty-state">No usage recorded for this key on the selected day.</div>
         ) : (
           <div className="table-wrap">
             <table className="table">

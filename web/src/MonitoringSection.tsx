@@ -1,5 +1,6 @@
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useState, useRef, useEffect } from 'react'
 import { api, type StatsCount, type StatsSummary } from './api'
+import { usePolling } from './hooks/usePolling'
 
 type Range = '15m' | '1h' | '24h'
 
@@ -9,7 +10,6 @@ function CountTable({ title, items }: { title: string; items: StatsCount[] }) {
       <div className="eyebrow" style={{ marginBottom: 8 }}>
         {title}
       </div>
-
       {items.length === 0 ? (
         <div className="empty-state">No data yet.</div>
       ) : (
@@ -39,27 +39,41 @@ export default function MonitoringSection() {
   const [stats, setStats] = useState<StatsSummary | null>(null)
   const [error, setError] = useState('')
   const [loading, setLoading] = useState(false)
+  const [hasLoaded, setHasLoaded] = useState(false)
 
-  const load = useCallback(async () => {
-    setLoading(true)
+  const reqId = useRef(0)
+  const mounted = useRef(true)
+
+  useEffect(() => {
+    return () => {
+      mounted.current = false
+    }
+  }, [])
+
+  const load = useCallback(async (background = false) => {
+    const id = ++reqId.current
+    if (!background) setLoading(true)
     setError('')
-
     try {
       const data = await api.getStatsSummary(range)
-      setStats(data)
+      if (!mounted.current) return
+      if (id === reqId.current) {
+        setStats(data)
+        setHasLoaded(true)
+      }
     } catch (err) {
-      setStats(null)
-      setError(err instanceof Error ? err.message : 'Failed to load stats')
+      if (!mounted.current) return
+      if (id === reqId.current) {
+        setError(err instanceof Error ? err.message : 'Failed to load stats')
+        setHasLoaded(true)
+      }
     } finally {
-      setLoading(false)
+      if (!mounted.current) return
+      if (id === reqId.current && !background) setLoading(false)
     }
   }, [range])
 
-  useEffect(() => {
-    load()
-    const interval = setInterval(load, 15000)
-    return () => clearInterval(interval)
-  }, [load])
+  usePolling(load, 15000, [range])
 
   const cacheHitRate =
     stats && stats.totals.requests > 0
@@ -70,6 +84,10 @@ export default function MonitoringSection() {
     ? Math.max(...stats.series.map(point => point.requests), 1)
     : 1
 
+  if (!hasLoaded && !stats) {
+    return <div className="empty-state">Loading monitoring data...</div>
+  }
+
   return (
     <section className="card">
       <div className="card-header">
@@ -77,7 +95,6 @@ export default function MonitoringSection() {
           <span className="eyebrow">Observability</span>
           <h2 className="card-title">Monitoring</h2>
         </div>
-
         <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
           <select
             className="input"
@@ -88,46 +105,33 @@ export default function MonitoringSection() {
             <option value="1h">Last hour</option>
             <option value="24h">Last 24 hours</option>
           </select>
-
-          <button className="btn btn-ghost" onClick={load} disabled={loading}>
+          <button className="btn btn-ghost" onClick={() => load(false)} disabled={loading}>
             {loading ? 'Refreshing…' : 'Refresh'}
           </button>
         </div>
       </div>
-
       {error && <div className="alert alert-error">{error}</div>}
-
       {stats && (
         <>
-          <div
-            style={{
-              display: 'grid',
-              gridTemplateColumns: 'repeat(auto-fit, minmax(160px, 1fr))',
-              gap: 16,
-            }}
-          >
+          <div className="stats-grid">
             <div className="stat-card">
               <span className="stat-label">Requests</span>
               <span className="stat-value">{stats.totals.requests.toLocaleString()}</span>
             </div>
-
             <div className="stat-card">
               <span className="stat-label">Errors</span>
               <span className="stat-value">{stats.totals.errors.toLocaleString()}</span>
             </div>
-
             <div className="stat-card">
               <span className="stat-label">Cache hit rate</span>
               <span className="stat-value">{cacheHitRate}%</span>
             </div>
-
             <div className="stat-card">
               <span className="stat-label">Avg latency</span>
               <span className="stat-value stat-mono">
                 {Math.round(stats.latency.avg_ms)}ms
               </span>
             </div>
-
             <div className="stat-card">
               <span className="stat-label">p95 latency</span>
               <span className="stat-value stat-mono">
@@ -135,57 +139,30 @@ export default function MonitoringSection() {
               </span>
             </div>
           </div>
-
           <div>
             <div className="eyebrow" style={{ marginBottom: 8 }}>
               Request volume
             </div>
-
             {stats.series.length === 0 ? (
               <div className="empty-state">No requests recorded for this range.</div>
             ) : (
-              <div
-                style={{
-                  display: 'flex',
-                  alignItems: 'flex-end',
-                  gap: 2,
-                  height: 120,
-                  padding: 12,
-                  background: 'var(--bg)',
-                  border: '1px solid var(--border)',
-                  borderRadius: 8,
-                }}
-              >
+              <div className="chart-container">
                 {stats.series.map((point, index) => {
                   const height = Math.max(2, (point.requests / maxRequests) * 100)
                   const label = new Date(point.time).toLocaleString()
-
                   return (
                     <div
                       key={`${point.time}-${index}`}
                       title={`${label} — ${point.requests} requests, ${point.errors} errors`}
-                      style={{
-                        flex: 1,
-                        minWidth: 2,
-                        height: `${height}%`,
-                        borderRadius: 2,
-                        background: point.errors > 0 ? 'var(--danger)' : 'var(--accent)',
-                        opacity: 0.85,
-                      }}
+                      className={`chart-bar ${point.errors > 0 ? 'chart-bar--error' : ''}`}
+                      style={{ height: `${height}%` }}
                     />
                   )
                 })}
               </div>
             )}
           </div>
-
-          <div
-            style={{
-              display: 'grid',
-              gridTemplateColumns: 'repeat(auto-fit, minmax(240px, 1fr))',
-              gap: 16,
-            }}
-          >
+          <div className="tables-grid">
             <CountTable title="Top methods" items={stats.top_methods} />
             <CountTable title="Top networks" items={stats.top_networks} />
             <CountTable title="Top statuses" items={stats.top_statuses} />

@@ -121,33 +121,46 @@ export class AuthError extends Error {
 
 async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
   const secret = getStoredSecret()
+  
+  const headers: Record<string, string> = {
+    ...(secret ? { 'X-Admin-Secret': secret } : {}),
+    ...(options.headers as Record<string, string> ?? {}),
+  }
+
+  // FIX: Only set Content-Type if there is a body
+  if (options.body) {
+    headers['Content-Type'] = 'application/json'
+  }
 
   const res = await fetch(path, {
     ...options,
-    headers: {
-      'Content-Type': 'application/json',
-      ...(secret ? { 'X-Admin-Secret': secret } : {}),
-      ...(options.headers ?? {}),
-    },
+    headers,
   })
 
   if (res.status === 401 || res.status === 403) {
     throw new AuthError()
   }
-
   if (!res.ok) {
     const body = await res.json().catch(() => ({}))
     throw new Error(body.error ?? `Request failed (${res.status})`)
   }
-
   return res.json() as Promise<T>
 }
 
 export async function verifySecret(secret: string): Promise<boolean> {
-  const res = await fetch('/api/tenants', {
-    headers: { 'X-Admin-Secret': secret },
-  })
-  return res.ok
+  try {
+    const res = await fetch('/api/tenants', {
+      headers: { 'X-Admin-Secret': secret },
+    })
+    
+    // FIX: Properly distinguish between bad credentials and server errors
+    if (res.status === 401 || res.status === 403) return false
+    if (!res.ok) throw new Error(`Server error: ${res.status}`)
+    return true
+  } catch (err) {
+    if (err instanceof Error && err.message.startsWith('Server error')) throw err
+    throw new Error('Could not reach the admin API. Is it running?')
+  }
 }
 
 /* ------------------------------------------------------------------ */
@@ -158,7 +171,6 @@ export const api = {
   health: () => request<{ status: string }>('/api/health'),
 
   /* ----------------------- Tenants ------------------------------- */
-
   listTenants: () => request<Tenant[]>('/api/tenants'),
 
   createTenant: (
@@ -210,25 +222,23 @@ export const api = {
     }),
 
   /* ----------------------- Usage --------------------------------- */
-
+  // FIX: Move API key out of query string and into a header
   getUsage: (apiKey: string, day?: string) =>
     request<Usage[]>(
-      `/api/usage?api_key=${encodeURIComponent(apiKey)}${day ? `&day=${day}` : ''}`
+      `/api/usage${day ? `?day=${encodeURIComponent(day)}` : ''}`,
+      { headers: { 'X-Tenant-API-Key': apiKey } }
     ),
 
   /* ----------------------- Monitoring ---------------------------- */
-
   getStatsSummary: (range: StatsRange = '1h') =>
     request<StatsSummary>(`/api/stats/summary?range=${range}`),
 
   getNodeHealth: () => request<NetworkHealth[]>('/gateway/health/nodes'),
 
   /* ----------------------- Blocks -------------------------------- */
-
   listBlocks: () => request<Block[]>('/api/blocks'),
 
   /* ----------------------- Blockchain configs -------------------- */
-
   listBlockchainConfigs: () => request<BlockchainConfig[]>('/api/blockchain'),
 
   getBlockchainConfig: (id: string) => request<BlockchainConfig>(`/api/blockchain/${id}`),
