@@ -44,10 +44,11 @@ export default function MonitoringSection() {
   const reqId = useRef(0)
   const mounted = useRef(true)
 
+  // FIX: reset mounted on remount so React StrictMode's double-mount
+  // doesn't leave this permanently false.
   useEffect(() => {
-    return () => {
-      mounted.current = false
-    }
+    mounted.current = true
+    return () => { mounted.current = false }
   }, [])
 
   const load = useCallback(async (background = false) => {
@@ -64,6 +65,7 @@ export default function MonitoringSection() {
     } catch (err) {
       if (!mounted.current) return
       if (id === reqId.current) {
+        setStats(null)
         setError(err instanceof Error ? err.message : 'Failed to load stats')
         setHasLoaded(true)
       }
@@ -113,7 +115,13 @@ export default function MonitoringSection() {
       {error && <div className="alert alert-error">{error}</div>}
       {stats && (
         <>
-          <div className="stats-grid">
+          <div
+            style={{
+              display: 'grid',
+              gridTemplateColumns: 'repeat(auto-fit, minmax(160px, 1fr))',
+              gap: 16,
+            }}
+          >
             <div className="stat-card">
               <span className="stat-label">Requests</span>
               <span className="stat-value">{stats.totals.requests.toLocaleString()}</span>
@@ -146,7 +154,18 @@ export default function MonitoringSection() {
             {stats.series.length === 0 ? (
               <div className="empty-state">No requests recorded for this range.</div>
             ) : (
-              <div className="chart-container">
+              <div
+                style={{
+                  display: 'flex',
+                  alignItems: 'flex-end',
+                  gap: 2,
+                  height: 120,
+                  padding: 12,
+                  background: 'var(--bg)',
+                  border: '1px solid var(--border)',
+                  borderRadius: 8,
+                }}
+              >
                 {stats.series.map((point, index) => {
                   const height = Math.max(2, (point.requests / maxRequests) * 100)
                   const label = new Date(point.time).toLocaleString()
@@ -154,15 +173,27 @@ export default function MonitoringSection() {
                     <div
                       key={`${point.time}-${index}`}
                       title={`${label} — ${point.requests} requests, ${point.errors} errors`}
-                      className={`chart-bar ${point.errors > 0 ? 'chart-bar--error' : ''}`}
-                      style={{ height: `${height}%` }}
+                      style={{
+                        flex: 1,
+                        minWidth: 2,
+                        height: `${height}%`,
+                        borderRadius: 2,
+                        background: point.errors > 0 ? 'var(--danger)' : 'var(--accent)',
+                        opacity: 0.85,
+                      }}
                     />
                   )
                 })}
               </div>
             )}
           </div>
-          <div className="tables-grid">
+          <div
+            style={{
+              display: 'grid',
+              gridTemplateColumns: 'repeat(auto-fit, minmax(240px, 1fr))',
+              gap: 16,
+            }}
+          >
             <CountTable title="Top methods" items={stats.top_methods} />
             <CountTable title="Top networks" items={stats.top_networks} />
             <CountTable title="Top statuses" items={stats.top_statuses} />
