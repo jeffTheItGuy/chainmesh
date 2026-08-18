@@ -11,8 +11,14 @@ export default function NodeStatusSection() {
   const reqId = useRef(0)
   const mounted = useRef(true)
 
+  // FIX: Reset mounted on every mount. 
+  // Without this, React StrictMode's double-mount strands the flag at `false` 
+  // after the first cleanup, causing all subsequent API responses to be ignored.
   useEffect(() => {
-    return () => { mounted.current = false }
+    mounted.current = true
+    return () => { 
+      mounted.current = false 
+    }
   }, [])
 
   const load = useCallback(async (background = false) => {

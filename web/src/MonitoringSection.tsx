@@ -161,9 +161,8 @@ export default function MonitoringSection() {
                   gap: 2,
                   height: 120,
                   padding: 12,
-                  background: 'var(--bg)',
+                  background: 'var(--bg-elevated-2)',
                   border: '1px solid var(--border)',
-                  borderRadius: 8,
                 }}
               >
                 {stats.series.map((point, index) => {
@@ -177,7 +176,6 @@ export default function MonitoringSection() {
                         flex: 1,
                         minWidth: 2,
                         height: `${height}%`,
-                        borderRadius: 2,
                         background: point.errors > 0 ? 'var(--danger)' : 'var(--accent)',
                         opacity: 0.85,
                       }}
