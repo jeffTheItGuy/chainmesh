@@ -1,9 +1,10 @@
 interface RoleGateProps {
   onViewer: () => void
   onAdmin: () => void
+  onLearnMore: () => void
 }
 
-export default function RoleGate({ onViewer, onAdmin }: RoleGateProps) {
+export default function RoleGate({ onViewer, onAdmin, onLearnMore }: RoleGateProps) {
   return (
     <div className="login-shell">
       <div className="gate-card">
@@ -25,6 +26,16 @@ export default function RoleGate({ onViewer, onAdmin }: RoleGateProps) {
           <button type="button" className="gate-option" onClick={onAdmin}>
             <span className="gate-option-title">Admin sign in</span>
             <span className="gate-option-sub">Requires the admin secret</span>
+          </button>
+        </div>
+
+        <div className="mt-16" style={{ textAlign: 'center' }}>
+          <button
+            type="button"
+            className="btn btn-ghost btn-sm"
+            onClick={onLearnMore}
+          >
+            Learn more about BlockMesh
           </button>
         </div>
       </div>

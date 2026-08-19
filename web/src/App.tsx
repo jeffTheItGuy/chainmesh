@@ -3,6 +3,7 @@ import { api, AuthError, type Tenant, type Block, type BlockchainConfig } from '
 import { getRole, clearSession, storeViewerSession, type Role } from './auth'
 import RoleGate from './RoleGate'
 import Login from './Login'
+import LearnMore from './LearnMore'
 import TopBar from './TopBar'
 import StatsStrip from './StatsStrip'
 import BlockchainSection from './BlockchainSection'
@@ -16,6 +17,7 @@ import ApiDocs from './ApiDocs'
 export default function App() {
   const [role, setRole] = useState<Role>(() => getRole())
   const [showAdminLogin, setShowAdminLogin] = useState(false)
+  const [showLearnMore, setShowLearnMore] = useState(false)
   const [showDocs, setShowDocs] = useState(false)
   const [tenants, setTenants] = useState<Tenant[]>([])
   const [blocks, setBlocks] = useState<Block[]>([])
@@ -104,21 +106,30 @@ export default function App() {
   )
 
   if (!role) {
-    return showAdminLogin ? (
-      <Login
-        onAuthenticated={() => {
-          setShowAdminLogin(false)
-          setRole('admin')
-        }}
-        onBack={() => setShowAdminLogin(false)}
-      />
-    ) : (
+    if (showAdminLogin) {
+      return (
+        <Login
+          onAuthenticated={() => {
+            setShowAdminLogin(false)
+            setRole('admin')
+          }}
+          onBack={() => setShowAdminLogin(false)}
+        />
+      )
+    }
+
+    if (showLearnMore) {
+      return <LearnMore onBack={() => setShowLearnMore(false)} />
+    }
+
+    return (
       <RoleGate
         onViewer={() => {
           storeViewerSession()
           setRole('viewer')
         }}
         onAdmin={() => setShowAdminLogin(true)}
+        onLearnMore={() => setShowLearnMore(true)}
       />
     )
   }
