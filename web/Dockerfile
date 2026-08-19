@@ -1,8 +1,7 @@
 FROM node:20-alpine AS builder
 WORKDIR /app
 COPY package*.json ./
-# Strict CI: fails if package-lock.json is out of sync
-RUN npm ci 
+RUN npm ci
 COPY . .
 RUN npm run build
 

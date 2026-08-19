@@ -1,5 +1,6 @@
 import { useState, type FormEvent } from 'react'
 import { api, type Tenant, type CreatedTenant, type BlockchainConfig } from './api'
+import { useToast } from './components/ToastProvider'
 
 interface TenantsSectionProps {
   tenants: Tenant[]
@@ -33,6 +34,7 @@ export default function TenantsSection({
   const [copiedKey, setCopiedKey] = useState('')
   const [error, setError] = useState('')
   const [submitting, setSubmitting] = useState(false)
+  const { showToast } = useToast()
 
   const resetForm = () => {
     setName('')
@@ -75,9 +77,17 @@ export default function TenantsSection({
         }
         await api.updateTenant(editing.id, payload)
         onTenantUpdated({ ...editing, ...payload })
+        showToast(`Tenant "${name}" updated`, 'success')
         resetForm()
       } else {
-        const tenant = await api.createTenant(name, quotaRpm, networkId || undefined, quotaRps, quotaDaily, plan)
+        const tenant = await api.createTenant(
+          name,
+          quotaRpm,
+          networkId || undefined,
+          quotaRps,
+          quotaDaily,
+          plan
+        )
         setCreated(tenant)
         onTenantCreated(tenant)
         setName('')
@@ -87,9 +97,12 @@ export default function TenantsSection({
         setPlan('free')
         setNetworkId('')
         setShowForm(false)
+        showToast(`Tenant "${tenant.name}" created`, 'success')
       }
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Operation failed')
+      const msg = err instanceof Error ? err.message : 'Operation failed'
+      setError(msg)
+      showToast(msg, 'error')
     } finally {
       setSubmitting(false)
     }
@@ -100,18 +113,27 @@ export default function TenantsSection({
     try {
       await api.deleteTenant(id)
       onTenantDeleted(id)
+      showToast(`Tenant "${tenantName}" deleted`, 'success')
     } catch (err) {
-      alert(err instanceof Error ? err.message : 'Delete failed')
+      const msg = err instanceof Error ? err.message : 'Delete failed'
+      showToast(msg, 'error')
     }
   }
 
   const rotateKey = async (id: string, tenantName: string) => {
-    if (!confirm(`Rotate the API key for "${tenantName}"? The current key will stop working immediately.`)) return
+    if (
+      !confirm(
+        `Rotate the API key for "${tenantName}"? The current key will stop working immediately.`
+      )
+    )
+      return
     try {
       const result = await api.rotateTenantKey(id)
       setRotatedKey({ tenantName, apiKey: result.api_key })
+      showToast(`API key rotated for "${tenantName}"`, 'success')
     } catch (err) {
-      alert(err instanceof Error ? err.message : 'Key rotation failed')
+      const msg = err instanceof Error ? err.message : 'Key rotation failed'
+      showToast(msg, 'error')
     }
   }
 
@@ -120,8 +142,9 @@ export default function TenantsSection({
       await navigator.clipboard.writeText(key)
       setCopiedKey(key)
       setTimeout(() => setCopiedKey(''), 2000)
+      showToast('API key copied to clipboard', 'success')
     } catch {
-      alert('Failed to copy. Please select and copy manually.')
+      showToast('Failed to copy. Please select and copy manually.', 'error')
     }
   }
 
@@ -136,48 +159,83 @@ export default function TenantsSection({
           <span className="eyebrow">Access</span>
           <h2 className="card-title">Tenants</h2>
         </div>
-        <button className="btn btn-primary" onClick={() => { resetForm(); setShowForm(v => !v) }}>
+        <button
+          className="btn btn-primary"
+          onClick={() => {
+            resetForm()
+            setShowForm((v) => !v)
+          }}
+        >
           {showForm ? 'Cancel' : 'New tenant'}
         </button>
       </div>
 
       {created && (
-        <div className="alert alert-success">
+        <div className="alert alert-success" role="status" aria-live="polite">
           <strong>{created.name}</strong> created at {created.quota_rpm} req/min.
           <div className="key-row">
             <code className="key-value">{created.api_key}</code>
-            <button className="btn btn-ghost btn-sm" onClick={() => copyKey(created.api_key)}>
+            <button
+              className="btn btn-ghost btn-sm"
+              onClick={() => copyKey(created.api_key)}
+              autoFocus
+            >
               {copiedKey === created.api_key ? 'Copied!' : 'Copy'}
             </button>
           </div>
           <p className="alert-note">This key is shown once. Store it now — it won't be shown again.</p>
-          <button className="btn btn-ghost btn-sm" onClick={() => setCreated(null)}>Dismiss</button>
+          <button className="btn btn-ghost btn-sm" onClick={() => setCreated(null)}>
+            Dismiss
+          </button>
         </div>
       )}
 
       {rotatedKey && (
-        <div className="alert alert-success">
+        <div className="alert alert-success" role="status" aria-live="polite">
           <strong>{rotatedKey.tenantName}</strong> — new API key:
           <div className="key-row">
             <code className="key-value">{rotatedKey.apiKey}</code>
-            <button className="btn btn-ghost btn-sm" onClick={() => copyKey(rotatedKey.apiKey)}>
+            <button
+              className="btn btn-ghost btn-sm"
+              onClick={() => copyKey(rotatedKey.apiKey)}
+              autoFocus
+            >
               {copiedKey === rotatedKey.apiKey ? 'Copied!' : 'Copy'}
             </button>
           </div>
           <p className="alert-note">This key is shown once. Store it now — it won't be shown again.</p>
-          <button className="btn btn-ghost btn-sm" onClick={() => setRotatedKey(null)}>Dismiss</button>
+          <button className="btn btn-ghost btn-sm" onClick={() => setRotatedKey(null)}>
+            Dismiss
+          </button>
         </div>
       )}
 
       {showForm && (
         <form onSubmit={submit} className="inline-form">
           <div className="field">
-            <label className="label" htmlFor="tenant-name">Name</label>
-            <input id="tenant-name" className="input" value={name} onChange={e => setName(e.target.value)} placeholder="Client name" required />
+            <label className="label" htmlFor="tenant-name">
+              Name
+            </label>
+            <input
+              id="tenant-name"
+              className="input"
+              value={name}
+              onChange={(e) => setName(e.target.value)}
+              placeholder="Client name"
+              required
+              maxLength={100}
+            />
           </div>
           <div className="field">
-            <label className="label" htmlFor="tenant-plan">Plan</label>
-            <select id="tenant-plan" className="input" value={plan} onChange={e => setPlan(e.target.value)}>
+            <label className="label" htmlFor="tenant-plan">
+              Plan
+            </label>
+            <select
+              id="tenant-plan"
+              className="input"
+              value={plan}
+              onChange={(e) => setPlan(e.target.value)}
+            >
               <option value="free">Free</option>
               <option value="basic">Basic</option>
               <option value="pro">Pro</option>
@@ -185,33 +243,74 @@ export default function TenantsSection({
             </select>
           </div>
           <div className="field">
-            <label className="label" htmlFor="tenant-quota-rps">Quota (req/sec)</label>
-            <input id="tenant-quota-rps" type="number" min={1} className="input" value={quotaRps} onChange={e => setQuotaRps(Number(e.target.value))} />
+            <label className="label" htmlFor="tenant-quota-rps">
+              Quota (req/sec)
+            </label>
+            <input
+              id="tenant-quota-rps"
+              type="number"
+              min={1}
+              className="input"
+              value={quotaRps}
+              onChange={(e) => setQuotaRps(Number(e.target.value))}
+            />
           </div>
           <div className="field">
-            <label className="label" htmlFor="tenant-quota-rpm">Quota (req/min)</label>
-            <input id="tenant-quota-rpm" type="number" min={1} className="input" value={quotaRpm} onChange={e => setQuotaRpm(Number(e.target.value))} />
+            <label className="label" htmlFor="tenant-quota-rpm">
+              Quota (req/min)
+            </label>
+            <input
+              id="tenant-quota-rpm"
+              type="number"
+              min={1}
+              className="input"
+              value={quotaRpm}
+              onChange={(e) => setQuotaRpm(Number(e.target.value))}
+            />
           </div>
           <div className="field">
-            <label className="label" htmlFor="tenant-quota-daily">Quota (daily)</label>
-            <input id="tenant-quota-daily" type="number" min={1} className="input" value={quotaDaily} onChange={e => setQuotaDaily(Number(e.target.value))} />
+            <label className="label" htmlFor="tenant-quota-daily">
+              Quota (daily)
+            </label>
+            <input
+              id="tenant-quota-daily"
+              type="number"
+              min={1}
+              className="input"
+              value={quotaDaily}
+              onChange={(e) => setQuotaDaily(Number(e.target.value))}
+            />
           </div>
           <div className="field">
-            <label className="label" htmlFor="tenant-network">Blockchain Network</label>
+            <label className="label" htmlFor="tenant-network">
+              Blockchain Network
+            </label>
             <select
               id="tenant-network"
               className="input"
               value={networkId}
-              onChange={e => setNetworkId(e.target.value)}
+              onChange={(e) => setNetworkId(e.target.value)}
             >
               <option value="">Default (auto-assign)</option>
-              {networks.filter(n => n.enabled).map(n => (
-                <option key={n.id} value={n.id}>{n.name} {n.chain_id ? `(Chain ${n.chain_id})` : ''}</option>
-              ))}
+              {networks
+                .filter((n) => n.enabled)
+                .map((n) => (
+                  <option key={n.id} value={n.id}>
+                    {n.name} {n.chain_id ? `(Chain ${n.chain_id})` : ''}
+                  </option>
+                ))}
             </select>
           </div>
-          {error && <div className="alert alert-error">{error}</div>}
-          <button type="submit" className="btn btn-primary" disabled={!name || submitting}>
+          {error && (
+            <div className="alert alert-error" role="alert">
+              {error}
+            </div>
+          )}
+          <button
+            type="submit"
+            className="btn btn-primary"
+            disabled={!name || submitting}
+          >
             {submitting ? 'Saving…' : editing ? 'Update tenant' : 'Create tenant'}
           </button>
         </form>
@@ -229,23 +328,36 @@ export default function TenantsSection({
                 <th>Plan</th>
                 <th>Quota</th>
                 <th>Created</th>
-                <th style={{ textAlign: 'right' }}>Actions</th>
+                <th className="text-right">Actions</th>
               </tr>
             </thead>
             <tbody>
-              {tenants.map(t => (
+              {tenants.map((t) => (
                 <tr key={t.id}>
                   <td>{t.name}</td>
                   <td className="mono">
-                    {networks.find(n => n.id === t.blockchain_network_id)?.name || 'Default'}
+                    {networks.find((n) => n.id === t.blockchain_network_id)?.name || 'Default'}
                   </td>
                   <td className="mono">{t.plan || 'free'}</td>
                   <td className="mono">{t.quota_rpm} rpm</td>
                   <td className="muted">{new Date(t.created_at).toLocaleDateString()}</td>
-                  <td style={{ textAlign: 'right' }}>
-                    <button className="btn btn-ghost btn-sm" onClick={() => startEdit(t)}>Edit</button>
-                    <button className="btn btn-ghost btn-sm" onClick={() => rotateKey(t.id, t.name)} style={{ marginLeft: 4 }}>Rotate</button>
-                    <button className="btn btn-ghost btn-sm" onClick={() => remove(t.id, t.name)} style={{ marginLeft: 4, color: 'var(--danger)' }}>Delete</button>
+                  <td className="text-right">
+                    <button className="btn btn-ghost btn-sm" onClick={() => startEdit(t)}>
+                      Edit
+                    </button>
+                    <button
+                      className="btn btn-ghost btn-sm ml-4"
+                      onClick={() => rotateKey(t.id, t.name)}
+                    >
+                      Rotate
+                    </button>
+                    <button
+                      className="btn btn-ghost btn-sm ml-4"
+                      onClick={() => remove(t.id, t.name)}
+                      style={{ color: 'var(--danger)' }}
+                    >
+                      Delete
+                    </button>
                   </td>
                 </tr>
               ))}

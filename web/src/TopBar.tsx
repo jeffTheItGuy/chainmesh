@@ -13,7 +13,9 @@ export default function TopBar({ role, onLogout }: TopBarProps) {
       </div>
       <div className="topbar-right">
         <span className="topbar-eyebrow">{role === 'admin' ? 'Admin' : 'Viewer'}</span>
-        <button className="btn btn-ghost" onClick={onLogout}>Log out</button>
+        <button className="btn btn-ghost" onClick={onLogout}>
+          Log out
+        </button>
       </div>
     </header>
   )

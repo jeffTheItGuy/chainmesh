@@ -1,4 +1,4 @@
-import { useEffect, useState, useCallback } from 'react'
+import { useEffect, useState, useCallback, useMemo } from 'react'
 import { api, AuthError, type Tenant, type Block, type BlockchainConfig } from './api'
 import { getRole, clearSession, storeViewerSession, type Role } from './auth'
 import RoleGate from './RoleGate'
@@ -36,55 +36,69 @@ export default function App() {
     }
   }, [])
 
-  const loadDashboard = useCallback(async (currentRole: Role) => {
-    setLoadError('')
-    setHasLoaded(false)
-    try {
-      const [blockList, netList] = await Promise.all([
-        api.listBlocks(),
-        currentRole === 'admin' ? api.listBlockchainConfigs() : Promise.resolve([]),
-      ])
-      setBlocks(blockList || [])
-      if (currentRole === 'admin') {
-        setNetworks(netList || [])
-      }
-    } catch (err) {
-      if (err instanceof AuthError) {
-        if (currentRole === 'viewer') {
-          setLoadError('This deployment requires the admin secret to read chain data.')
-        } else {
-          handleAuthError()
+  const loadDashboard = useCallback(
+    async (currentRole: Role) => {
+      if (!currentRole) return
+      setLoadError('')
+      setHasLoaded(false)
+      try {
+        const [blockList, netList] = await Promise.all([
+          api.listBlocks(),
+          currentRole === 'admin' ? api.listBlockchainConfigs() : Promise.resolve([]),
+        ])
+        setBlocks(blockList || [])
+        if (currentRole === 'admin') {
+          setNetworks(netList || [])
         }
+      } catch (err) {
+        if (err instanceof AuthError) {
+          if (currentRole === 'viewer') {
+            setLoadError('This deployment requires the admin secret to read chain data.')
+          } else {
+            handleAuthError()
+          }
+          setHasLoaded(true)
+          return
+        }
+        setLoadError(err instanceof Error ? err.message : 'Failed to load dashboard data')
         setHasLoaded(true)
         return
       }
-      setLoadError(err instanceof Error ? err.message : 'Failed to load dashboard data')
-      setHasLoaded(true)
-      return
-    }
 
-    if (currentRole !== 'admin') {
-      setHasLoaded(true)
-      return
-    }
-
-    try {
-      const tenantList = await api.listTenants()
-      setTenants(tenantList || [])
-    } catch (err) {
-      if (err instanceof AuthError) {
-        handleAuthError()
+      if (currentRole !== 'admin') {
+        setHasLoaded(true)
         return
       }
-      setLoadError(err instanceof Error ? err.message : 'Failed to load dashboard data')
-    } finally {
-      setHasLoaded(true)
-    }
-  }, [handleAuthError])
+
+      try {
+        const tenantList = await api.listTenants()
+        setTenants(tenantList || [])
+      } catch (err) {
+        if (err instanceof AuthError) {
+          handleAuthError()
+          return
+        }
+        setLoadError(err instanceof Error ? err.message : 'Failed to load dashboard data')
+      } finally {
+        setHasLoaded(true)
+      }
+    },
+    [handleAuthError]
+  )
 
   useEffect(() => {
     if (role) loadDashboard(role)
   }, [role, loadDashboard])
+
+  const latestBlock = useMemo(
+    () => (blocks.length > 0 ? Math.max(...blocks.map((b) => b.number)) : null),
+    [blocks]
+  )
+
+  const totalTxCount = useMemo(
+    () => blocks.reduce((sum, b) => sum + b.tx_count, 0),
+    [blocks]
+  )
 
   if (!role) {
     return showAdminLogin ? (
@@ -106,9 +120,6 @@ export default function App() {
     )
   }
 
-  const latestBlock = blocks.length > 0 ? Math.max(...blocks.map(b => b.number)) : null
-  const totalTxCount = blocks.reduce((sum, b) => sum + b.tx_count, 0)
-
   return (
     <div className="shell">
       <TopBar role={role} onLogout={handleAuthError} />
@@ -118,7 +129,11 @@ export default function App() {
           latestBlock={latestBlock}
           totalTxCount={totalTxCount}
         />
-        {loadError && <div className="alert alert-error">{loadError}</div>}
+        {loadError && (
+          <div className="alert alert-error" role="alert">
+            {loadError}
+          </div>
+        )}
 
         {role === 'admin' && <MonitoringSection />}
         {role === 'admin' && <NodeStatusSection />}
@@ -131,9 +146,11 @@ export default function App() {
             tenants={tenants}
             networks={networks}
             hasLoaded={hasLoaded}
-            onTenantCreated={tenant => setTenants(prev => [tenant, ...prev])}
-            onTenantDeleted={id => setTenants(prev => prev.filter(t => t.id !== id))}
-            onTenantUpdated={updated => setTenants(prev => prev.map(t => t.id === updated.id ? updated : t))}
+            onTenantCreated={(tenant) => setTenants((prev) => [tenant, ...prev])}
+            onTenantDeleted={(id) => setTenants((prev) => prev.filter((t) => t.id !== id))}
+            onTenantUpdated={(updated) =>
+              setTenants((prev) => prev.map((t) => (t.id === updated.id ? updated : t)))
+            }
           />
         )}
         {role === 'admin' && <UsageSection tenants={tenants} />}

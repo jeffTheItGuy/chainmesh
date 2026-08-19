@@ -1,4 +1,5 @@
 import type { Block } from './api'
+import { SkeletonBlocks } from './components/Skeleton'
 
 interface BlocksSectionProps {
   blocks: Block[]
@@ -7,7 +8,7 @@ interface BlocksSectionProps {
 
 export default function BlocksSection({ blocks, hasLoaded }: BlocksSectionProps) {
   if (!hasLoaded) {
-    return <div className="empty-state">Loading blocks…</div>
+    return <SkeletonBlocks />
   }
 
   return (
@@ -33,11 +34,15 @@ export default function BlocksSection({ blocks, hasLoaded }: BlocksSectionProps)
               </tr>
             </thead>
             <tbody>
-              {blocks.map(b => (
+              {blocks.map((b) => (
                 <tr key={`${b.network_id}-${b.hash}`}>
-                  <td className="mono muted">{b.network_name || b.network_id?.slice(0, 8) || '—'}</td>
+                  <td className="mono muted">
+                    {b.network_name || b.network_id?.slice(0, 8) || '—'}
+                  </td>
                   <td className="mono">#{b.number.toLocaleString()}</td>
-                  <td className="mono muted truncate" title={b.hash}>{b.hash}</td>
+                  <td className="mono muted truncate" title={b.hash}>
+                    {b.hash}
+                  </td>
                   <td>{b.tx_count}</td>
                   <td className="muted">{new Date(b.timestamp).toLocaleTimeString()}</td>
                 </tr>

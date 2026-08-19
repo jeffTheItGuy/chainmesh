@@ -119,15 +119,21 @@ export class AuthError extends Error {
   }
 }
 
+export class NetworkError extends Error {
+  constructor(message = 'Could not reach the API') {
+    super(message)
+    this.name = 'NetworkError'
+  }
+}
+
 async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
   const secret = getStoredSecret()
-  
+
   const headers: Record<string, string> = {
     ...(secret ? { 'X-Admin-Secret': secret } : {}),
     ...(options.headers as Record<string, string> ?? {}),
   }
 
-  // FIX: Only set Content-Type if there is a body
   if (options.body) {
     headers['Content-Type'] = 'application/json'
   }
@@ -152,14 +158,13 @@ export async function verifySecret(secret: string): Promise<boolean> {
     const res = await fetch('/api/tenants', {
       headers: { 'X-Admin-Secret': secret },
     })
-    
-    // FIX: Properly distinguish between bad credentials and server errors
+
     if (res.status === 401 || res.status === 403) return false
-    if (!res.ok) throw new Error(`Server error: ${res.status}`)
+    if (!res.ok) throw new NetworkError(`Server error: ${res.status}`)
     return true
   } catch (err) {
-    if (err instanceof Error && err.message.startsWith('Server error')) throw err
-    throw new Error('Could not reach the admin API. Is it running?')
+    if (err instanceof NetworkError) throw err
+    throw new NetworkError('Could not reach the admin API. Is it running?')
   }
 }
 
@@ -222,14 +227,12 @@ export const api = {
     }),
 
   /* ----------------------- Usage --------------------------------- */
-  // FIX: Move API key out of query string and into a header
   getUsage: (apiKey: string, day?: string) =>
     request<Usage[]>(
       `/api/usage${day ? `?day=${encodeURIComponent(day)}` : ''}`,
       { headers: { 'X-Tenant-API-Key': apiKey } }
     ),
 
-    // Admin-only usage lookup by tenant ID
   getTenantUsage: (tenantId: string, day?: string) =>
     request<Usage[]>(
       `/api/tenants/${tenantId}/usage${day ? `?day=${encodeURIComponent(day)}` : ''}`
@@ -274,4 +277,4 @@ export const api = {
       method: 'POST',
       body: JSON.stringify(cfg),
     }),
-}
+} as const

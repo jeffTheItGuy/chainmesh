@@ -1,10 +1,17 @@
 import { defineConfig } from 'vite'
 import react from '@vitejs/plugin-react'
+import path from 'path'
 
 export default defineConfig({
   plugins: [react()],
+  resolve: {
+    alias: {
+      '@': path.resolve(__dirname, './src'),
+    },
+  },
   build: {
-    outDir: 'dist'
+    outDir: 'dist',
+    sourcemap: true,
   },
   server: {
     port: 5173,
@@ -13,13 +20,13 @@ export default defineConfig({
       '/api': {
         target: 'http://admin:8081',
         changeOrigin: true,
-        rewrite: (path) => path.replace(/^\/api/, '')
+        rewrite: (path) => path.replace(/^\/api/, ''),
       },
       '/gateway': {
         target: 'http://gateway:8080',
         changeOrigin: true,
-        rewrite: (path) => path.replace(/^\/gateway/, '')
-      }
-    }
-  }
+        rewrite: (path) => path.replace(/^\/gateway/, ''),
+      },
+    },
+  },
 })

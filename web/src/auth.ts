@@ -8,7 +8,6 @@ function safeGetItem(key: string): string | null {
   try {
     return window.sessionStorage.getItem(key)
   } catch (e) {
-    // Silently fail if storage is blocked by browser privacy settings
     console.warn('Storage access denied for key:', key, e)
     return null
   }

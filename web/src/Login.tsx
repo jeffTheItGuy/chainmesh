@@ -36,7 +36,11 @@ export default function Login({ onAuthenticated, onBack }: LoginProps) {
     <div className="login-shell">
       <div className="login-card">
         {onBack && (
-          <button type="button" className="btn btn-ghost btn-sm login-back" onClick={onBack}>
+          <button
+            type="button"
+            className="btn btn-ghost btn-sm login-back"
+            onClick={onBack}
+          >
             ← Back
           </button>
         )}
@@ -47,19 +51,31 @@ export default function Login({ onAuthenticated, onBack }: LoginProps) {
         <h1 className="login-title">Sign in to the console</h1>
         <p className="login-sub">Enter the admin secret configured on this deployment.</p>
         <form onSubmit={submit} className="login-form">
-          <label className="label" htmlFor="secret">Admin secret</label>
+          <label className="label" htmlFor="secret">
+            Admin secret
+          </label>
           <input
             id="secret"
             type="password"
             className="input"
             value={secret}
-            onChange={e => setSecret(e.target.value)}
+            onChange={(e) => setSecret(e.target.value)}
             placeholder="ADMIN_SECRET"
             autoFocus
             autoComplete="current-password"
+            aria-invalid={!!error}
+            aria-describedby={error ? 'secret-error' : undefined}
           />
-          {error && <div className="alert alert-error">{error}</div>}
-          <button type="submit" className="btn btn-primary" disabled={checking || !secret}>
+          {error && (
+            <div id="secret-error" className="alert alert-error" role="alert">
+              {error}
+            </div>
+          )}
+          <button
+            type="submit"
+            className="btn btn-primary"
+            disabled={checking || !secret}
+          >
             {checking ? 'Checking…' : 'Enter console'}
           </button>
         </form>
