@@ -1,0 +1,10 @@
+import SwaggerUI from 'swagger-ui-react'
+import 'swagger-ui-react/swagger-ui.css'
+
+export default function ApiDocs() {
+  return (
+    <div className="card" style={{ padding: 0 }}>
+      <SwaggerUI url="/openapi.yaml" docExpansion="list" />
+    </div>
+  )
+}

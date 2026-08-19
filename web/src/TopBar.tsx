@@ -1,9 +1,11 @@
 interface TopBarProps {
   role: 'admin' | 'viewer'
+  showDocs?: boolean
+  onToggleDocs?: () => void
   onLogout: () => void
 }
 
-export default function TopBar({ role, onLogout }: TopBarProps) {
+export default function TopBar({ role, showDocs, onToggleDocs, onLogout }: TopBarProps) {
   return (
     <header className="topbar">
       <div className="topbar-mark">
@@ -13,6 +15,11 @@ export default function TopBar({ role, onLogout }: TopBarProps) {
       </div>
       <div className="topbar-right">
         <span className="topbar-eyebrow">{role === 'admin' ? 'Admin' : 'Viewer'}</span>
+        {onToggleDocs && (
+          <button className="btn btn-ghost" onClick={onToggleDocs}>
+            {showDocs ? 'Dashboard' : 'API Docs'}
+          </button>
+        )}
         <button className="btn btn-ghost" onClick={onLogout}>
           Log out
         </button>

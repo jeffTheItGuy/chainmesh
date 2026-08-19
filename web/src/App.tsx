@@ -11,10 +11,12 @@ import UsageSection from './UsageSection'
 import BlocksSection from './BlocksSection'
 import NodeStatusSection from './NodeStatusSection'
 import MonitoringSection from './MonitoringSection'
+import ApiDocs from './ApiDocs'
 
 export default function App() {
   const [role, setRole] = useState<Role>(() => getRole())
   const [showAdminLogin, setShowAdminLogin] = useState(false)
+  const [showDocs, setShowDocs] = useState(false)
   const [tenants, setTenants] = useState<Tenant[]>([])
   const [blocks, setBlocks] = useState<Block[]>([])
   const [networks, setNetworks] = useState<BlockchainConfig[]>([])
@@ -25,6 +27,7 @@ export default function App() {
     clearSession()
     setRole(null)
     setShowAdminLogin(false)
+    setShowDocs(false)
   }, [])
 
   const loadNetworks = useCallback(async () => {
@@ -122,39 +125,50 @@ export default function App() {
 
   return (
     <div className="shell">
-      <TopBar role={role} onLogout={handleAuthError} />
+      <TopBar
+        role={role}
+        showDocs={showDocs}
+        onToggleDocs={() => setShowDocs((v) => !v)}
+        onLogout={handleAuthError}
+      />
       <main className="content">
-        <StatsStrip
-          tenantCount={role === 'admin' ? tenants.length : null}
-          latestBlock={latestBlock}
-          totalTxCount={totalTxCount}
-        />
-        {loadError && (
-          <div className="alert alert-error" role="alert">
-            {loadError}
-          </div>
-        )}
+        {showDocs ? (
+          <ApiDocs />
+        ) : (
+          <>
+            <StatsStrip
+              tenantCount={role === 'admin' ? tenants.length : null}
+              latestBlock={latestBlock}
+              totalTxCount={totalTxCount}
+            />
+            {loadError && (
+              <div className="alert alert-error" role="alert">
+                {loadError}
+              </div>
+            )}
 
-        {role === 'admin' && <MonitoringSection />}
-        {role === 'admin' && <NodeStatusSection />}
+            {role === 'admin' && <MonitoringSection />}
+            {role === 'admin' && <NodeStatusSection />}
 
-        {role === 'admin' && (
-          <BlockchainSection networks={networks} onNetworksChanged={loadNetworks} />
+            {role === 'admin' && (
+              <BlockchainSection networks={networks} onNetworksChanged={loadNetworks} />
+            )}
+            {role === 'admin' && (
+              <TenantsSection
+                tenants={tenants}
+                networks={networks}
+                hasLoaded={hasLoaded}
+                onTenantCreated={(tenant) => setTenants((prev) => [tenant, ...prev])}
+                onTenantDeleted={(id) => setTenants((prev) => prev.filter((t) => t.id !== id))}
+                onTenantUpdated={(updated) =>
+                  setTenants((prev) => prev.map((t) => (t.id === updated.id ? updated : t)))
+                }
+              />
+            )}
+            {role === 'admin' && <UsageSection tenants={tenants} />}
+            <BlocksSection blocks={blocks} hasLoaded={hasLoaded} />
+          </>
         )}
-        {role === 'admin' && (
-          <TenantsSection
-            tenants={tenants}
-            networks={networks}
-            hasLoaded={hasLoaded}
-            onTenantCreated={(tenant) => setTenants((prev) => [tenant, ...prev])}
-            onTenantDeleted={(id) => setTenants((prev) => prev.filter((t) => t.id !== id))}
-            onTenantUpdated={(updated) =>
-              setTenants((prev) => prev.map((t) => (t.id === updated.id ? updated : t)))
-            }
-          />
-        )}
-        {role === 'admin' && <UsageSection tenants={tenants} />}
-        <BlocksSection blocks={blocks} hasLoaded={hasLoaded} />
       </main>
     </div>
   )
