@@ -3,6 +3,8 @@ package redis
 import (
 	"context"
 	"fmt"
+	"os"
+	"strconv"
 	"time"
 
 	goredis "github.com/redis/go-redis/v9"
@@ -64,7 +66,22 @@ func (c *Client) CheckRateLimit(ctx context.Context, tenantID string, quotaRPM i
 	return int(current) <= quotaRPM, nil
 }
 
-// CheckRateLimits checks RPS, per-minute, and daily limits.
+// atomicIncrExpireScript atomically increments a key and sets its expiry
+// only if the key is new (INCR returned 1). This prevents the race condition
+// where multiple concurrent requests create a key that never expires.
+//
+// KEYS[1] = rate limit key
+// ARGV[1] = TTL in seconds
+// Returns: the new counter value
+const atomicIncrExpireScript = `
+	local current = redis.call("INCR", KEYS[1])
+	if current == 1 then
+		redis.call("EXPIRE", KEYS[1], ARGV[1])
+	end
+	return current
+`
+
+// CheckRateLimits checks RPS, per-minute, and daily limits atomically.
 // A quota of 0 means that specific limit is disabled.
 func (c *Client) CheckRateLimits(
 	ctx context.Context,
@@ -84,15 +101,10 @@ func (c *Client) CheckRateLimits(
 
 	if quotaRPS > 0 {
 		rpsKey := fmt.Sprintf("rl:rps:%s:%d", tenantID, now.Unix())
-		currentRPS, err := c.Incr(ctx, rpsKey)
+		// 2-second window for RPS
+		currentRPS, err := c.client.Eval(ctx, atomicIncrExpireScript, []string{rpsKey}, "2").Int64()
 		if err != nil {
-			return false, status, err
-		}
-
-		if currentRPS == 1 {
-			if err := c.Expire(ctx, rpsKey, 2*time.Second); err != nil {
-				return false, status, err
-			}
+			return false, status, fmt.Errorf("rps incr failed: %w", err)
 		}
 
 		if int(currentRPS) > quotaRPS {
@@ -104,15 +116,10 @@ func (c *Client) CheckRateLimits(
 
 	if quotaRPM > 0 {
 		minuteKey := fmt.Sprintf("rl:min:%s:%s", tenantID, now.Format("2006-01-02T15:04"))
-		currentMinute, err := c.Incr(ctx, minuteKey)
+		// 2-minute window for per-minute limit (generous cleanup margin)
+		currentMinute, err := c.client.Eval(ctx, atomicIncrExpireScript, []string{minuteKey}, "120").Int64()
 		if err != nil {
-			return false, status, err
-		}
-
-		if currentMinute == 1 {
-			if err := c.Expire(ctx, minuteKey, 2*time.Minute); err != nil {
-				return false, status, err
-			}
+			return false, status, fmt.Errorf("rpm incr failed: %w", err)
 		}
 
 		remaining := quotaRPM - int(currentMinute)
@@ -138,15 +145,10 @@ func (c *Client) CheckRateLimits(
 
 	if quotaDaily > 0 {
 		dayKey := fmt.Sprintf("rl:day:%s:%s", tenantID, now.Format("2006-01-02"))
-		currentDay, err := c.Incr(ctx, dayKey)
+		// 25-hour window for daily limit (handles DST edge cases)
+		currentDay, err := c.client.Eval(ctx, atomicIncrExpireScript, []string{dayKey}, "90000").Int64()
 		if err != nil {
-			return false, status, err
-		}
-
-		if currentDay == 1 {
-			if err := c.Expire(ctx, dayKey, 25*time.Hour); err != nil {
-				return false, status, err
-			}
+			return false, status, fmt.Errorf("daily incr failed: %w", err)
 		}
 
 		if int(currentDay) > quotaDaily {

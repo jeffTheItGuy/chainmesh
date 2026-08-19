@@ -2,7 +2,10 @@ package telemetry
 
 import (
 	"context"
+	"fmt"
 	"log/slog"
+	"os"
+	"strconv"
 	"sync"
 	"time"
 
@@ -55,11 +58,33 @@ func (r *Recorder) Start() {
 	go r.worker()
 }
 
+// Stop gracefully shuts down the telemetry worker with a bounded timeout.
+// It signals cancellation, drains the queue, and waits up to the configured
+// timeout for in-flight writes to complete. Any remaining jobs are dropped.
 func (r *Recorder) Stop() {
-	if r.cancel != nil {
-		r.cancel()
+	if r.cancel == nil {
+		return
 	}
-	r.wg.Wait()
+
+	// Signal the worker to stop accepting new jobs and finish current ones
+	r.cancel()
+
+	// Wait for worker to finish with a timeout to prevent indefinite hangs
+	// during Postgres outages or slow writes.
+	timeout := envDuration("TELEMETRY_SHUTDOWN_TIMEOUT", 5*time.Second)
+
+	done := make(chan struct{})
+	go func() {
+		r.wg.Wait()
+		close(done)
+	}()
+
+	select {
+	case <-done:
+		r.log.Info("telemetry worker stopped cleanly")
+	case <-time.After(timeout):
+		r.log.Warn("telemetry worker shutdown timed out", "timeout", timeout, "dropped_jobs", len(r.queue))
+	}
 }
 
 func (r *Recorder) RecordUsage(u *model.Usage) {
@@ -95,9 +120,38 @@ func (r *Recorder) worker() {
 	for {
 		select {
 		case <-r.ctx.Done():
+			// Drain remaining queue before exiting
+			r.drain()
 			return
 		case j := <-r.queue:
 			r.process(j)
+		}
+	}
+}
+
+// drain processes any remaining jobs in the queue after cancellation.
+// This gives in-flight telemetry a chance to land before shutdown.
+func (r *Recorder) drain() {
+	drainTimeout := envDuration("TELEMETRY_DRAIN_TIMEOUT", 2*time.Second)
+	deadline := time.After(drainTimeout)
+
+	for {
+		select {
+		case j := <-r.queue:
+			r.process(j)
+		case <-deadline:
+			remaining := len(r.queue)
+			if remaining > 0 {
+				r.log.Warn("telemetry drain incomplete", "remaining_jobs", remaining)
+			}
+			return
+		default:
+			// Queue is empty and no deadline hit — we're done
+			if len(r.queue) == 0 {
+				return
+			}
+			// Brief pause to avoid busy-waiting
+			time.Sleep(10 * time.Millisecond)
 		}
 	}
 }
@@ -147,4 +201,16 @@ func (r *Recorder) process(j job) {
 		"telemetry write dropped after retries",
 		"kind", string(j.kind),
 	)
+}
+
+func envDuration(key string, fallback time.Duration) time.Duration {
+	v := os.Getenv(key)
+	if v == "" {
+		return fallback
+	}
+	d, err := time.ParseDuration(v)
+	if err != nil || d <= 0 {
+		return fallback
+	}
+	return d
 }
