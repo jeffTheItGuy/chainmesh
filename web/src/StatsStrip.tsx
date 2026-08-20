@@ -6,7 +6,7 @@ interface StatsStripProps {
 
 export default function StatsStrip({ tenantCount, latestBlock, totalTxCount }: StatsStripProps) {
   return (
-    <div className="stat-grid">
+    <div className={`stat-grid${tenantCount === null ? ' stat-grid--two' : ''}`}>
       {tenantCount !== null && (
         <div className="stat-card">
           <span className="stat-label">Tenants</span>
