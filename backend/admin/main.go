@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"encoding/json"
+	"io"
 	"net/http"
 	"os"
 	"os/signal"
@@ -471,6 +472,25 @@ func main() {
 			writeErr(w, http.StatusMethodNotAllowed, "method not allowed")
 		}
 	}))
+
+	// Public proxy: forward node health from gateway so unauthenticated viewers can see it
+	mux.HandleFunc("/gateway/health/nodes", func(w http.ResponseWriter, r *http.Request) {
+		gatewayAddr := os.Getenv("GATEWAY_ADDR")
+		if gatewayAddr == "" {
+			gatewayAddr = "http://localhost:8080"
+		}
+
+		resp, err := http.Get(gatewayAddr + "/health/nodes")
+		if err != nil {
+			writeErr(w, http.StatusBadGateway, "gateway unreachable")
+			return
+		}
+		defer resp.Body.Close()
+
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(resp.StatusCode)
+		io.Copy(w, resp.Body)
+	})
 
 	srv := &http.Server{
 		Addr:              ":8081",

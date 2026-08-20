@@ -652,3 +652,24 @@ code,
     align-items: stretch;
   }
 }
+
+
+.topbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  height: 56px; /* or whatever your top bar height is */
+}
+
+.topbar-mark {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.topbar-logo {
+  height: 42px;
+  width: auto;
+  display: block;
+  object-fit: contain;
+}
