@@ -32,8 +32,8 @@ services:
 
   gateway:
     build:
-      context: ./backend
-      dockerfile: gateway/Dockerfile
+      context: .
+      dockerfile: .docker/prod/prod-gateway.Dockerfile
     restart: unless-stopped
     ports:
       - "8080:8080"
@@ -52,8 +52,8 @@ services:
 
   admin:
     build:
-      context: ./backend
-      dockerfile: admin/Dockerfile
+      context: .
+      dockerfile: .docker/prod/prod-admin.Dockerfile
     restart: unless-stopped
     expose:
       - "8081"
@@ -68,8 +68,8 @@ services:
 
   ingestor:
     build:
-      context: ./backend
-      dockerfile: ingestor/Dockerfile
+      context: .
+      dockerfile: .docker/prod/prod-ingestor.Dockerfile
     restart: unless-stopped
     environment:
       DATABASE_URL: postgres://${POSTGRES_USER:-blockmesh}:${POSTGRES_PASSWORD:-blockmesh}@postgres:5432/${POSTGRES_DB:-blockmesh}
@@ -82,8 +82,8 @@ services:
 
   web:
     build:
-      context: ./web
-      dockerfile: Dockerfile
+      context: .
+      dockerfile: .docker/prod/prod-web.Dockerfile
     restart: unless-stopped
     ports:
       - "80:80"

@@ -142,15 +142,6 @@ code,
   gap: 10px;
 }
 
-.topbar-mark-dot {
-  width: 8px;
-  height: 8px;
-  border-radius: 50%;
-  background: var(--accent);
-  display: inline-block;
-  box-shadow: 0 0 0 3px var(--accent-soft);
-}
-
 .topbar-mark-text {
   font-weight: 700;
   font-size: 16px;
@@ -523,14 +514,6 @@ code,
   font-weight: 700;
   font-size: 15px;
   margin-bottom: 20px;
-}
-
-.login-mark-dot {
-  width: 8px;
-  height: 8px;
-  border-radius: 50%;
-  background: var(--accent);
-  box-shadow: 0 0 0 3px var(--accent-soft);
 }
 
 .login-title {

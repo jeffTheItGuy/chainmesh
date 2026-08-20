@@ -1,5 +1,5 @@
-const SECRET_KEY = 'blockmesh_admin_secret'
-const VIEWER_KEY = 'blockmesh_viewer_session'
+const SECRET_KEY = 'chainmesh_admin_secret'
+const VIEWER_KEY = 'chainmesh_viewer_session'
 
 export type Role = 'admin' | 'viewer' | null
 

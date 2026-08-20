@@ -1,9 +1,9 @@
 # syntax=docker/dockerfile:1
 FROM golang:1.22-alpine AS build
 WORKDIR /app
-COPY go.mod go.sum* ./
+COPY ./backend/go.mod ./backend/go.sum* ./
 RUN go mod download
-COPY . .
+COPY ./backend .
 RUN CGO_ENABLED=0 GOOS=linux go build -o /bin/ingestor ./ingestor
 
 FROM alpine:3.20

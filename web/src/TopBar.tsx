@@ -9,8 +9,14 @@ export default function TopBar({ role, showDocs, onToggleDocs, onLogout }: TopBa
   return (
     <header className="topbar">
       <div className="topbar-mark">
-        <span className="topbar-mark-dot" />
-        <span className="topbar-mark-text">BlockMesh</span>
+        <img
+          src="/logo/icon.svg"
+          alt=""
+          width={18}
+          height={18}
+          style={{ display: 'inline-block' }}
+        />
+        <span className="topbar-mark-text">ChainMesh</span>
         <span className="topbar-eyebrow">Gateway Console</span>
       </div>
       <div className="topbar-right">

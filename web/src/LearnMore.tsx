@@ -15,18 +15,24 @@ export default function LearnMore({ onBack }: LearnMoreProps) {
         </button>
 
         <div className="login-mark">
-          <span className="login-mark-dot" />
-          BlockMesh
+          <img
+            src="/logo/icon.svg"
+            alt=""
+            width={20}
+            height={20}
+            style={{ display: 'inline-block' }}
+          />
+          ChainMesh
         </div>
 
-        <h1 className="login-title">What is BlockMesh?</h1>
+        <h1 className="login-title">What is ChainMesh?</h1>
         <p className="login-sub">
           A production-grade, self-hosted API gateway that sits between your
           applications and blockchain RPC nodes.
         </p>
 
         <div className="gate-options">
-          <div className="gate-option" style={{ cursor: 'default' }}>
+          <div className="gate-option gate-option--static">
             <span className="gate-option-title">🧠 Smart Routing</span>
             <span className="gate-option-sub">
               Health-aware failover across multiple RPC endpoints. Automatically
@@ -34,7 +40,7 @@ export default function LearnMore({ onBack }: LearnMoreProps) {
             </span>
           </div>
 
-          <div className="gate-option" style={{ cursor: 'default' }}>
+          <div className="gate-option gate-option--static">
             <span className="gate-option-title">🔐 Secure Multi-Tenancy</span>
             <span className="gate-option-sub">
               SHA-256 hashed API keys, per-tenant rate limits (RPS/RPM/daily),
@@ -42,7 +48,7 @@ export default function LearnMore({ onBack }: LearnMoreProps) {
             </span>
           </div>
 
-          <div className="gate-option" style={{ cursor: 'default' }}>
+          <div className="gate-option gate-option--static">
             <span className="gate-option-title">⚡ Domain-Aware Caching</span>
             <span className="gate-option-sub">
               Redis-backed caching with method-specific TTLs — e.g.,
@@ -50,7 +56,7 @@ export default function LearnMore({ onBack }: LearnMoreProps) {
             </span>
           </div>
 
-          <div className="gate-option" style={{ cursor: 'default' }}>
+          <div className="gate-option gate-option--static">
             <span className="gate-option-title">📊 Real-Time Observability</span>
             <span className="gate-option-sub">
               Async telemetry, pre-aggregated stats views, Prometheus metrics,
@@ -58,7 +64,7 @@ export default function LearnMore({ onBack }: LearnMoreProps) {
             </span>
           </div>
 
-          <div className="gate-option" style={{ cursor: 'default' }}>
+          <div className="gate-option gate-option--static">
             <span className="gate-option-title">🔗 Multi-Network Support</span>
             <span className="gate-option-sub">
               Manage Ethereum, Sepolia, Polygon, and other networks via UI or

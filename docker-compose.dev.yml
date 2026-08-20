@@ -7,8 +7,13 @@ services:
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-blockmesh}
       POSTGRES_DB: ${POSTGRES_DB:-blockmesh}
     volumes:
-      - pgdata:/var/lib/postgresql/data
-      - ./backend/database/migrations:/docker-entrypoint-initdb.d
+      - type: volume
+        source: pgdata
+        target: /var/lib/postgresql/data
+      - type: bind
+        source: ./backend/database/migrations
+        target: /docker-entrypoint-initdb.d
+        read_only: true
     ports:
       - "5432:5432"
     healthcheck:
@@ -23,7 +28,9 @@ services:
     image: redis:7-alpine
     restart: unless-stopped
     volumes:
-      - redisdata:/data
+      - type: volume
+        source: redisdata
+        target: /data
     ports:
       - "6379:6379"
     healthcheck:
@@ -36,13 +43,18 @@ services:
 
   gateway:
     build:
-      context: ./backend
-      dockerfile: gateway/Dockerfile.dev
+      context: .
+      dockerfile: .docker/dev/dev-gateway.Dockerfile
     restart: unless-stopped
     ports:
       - "8080:8080"
     volumes:
-      - ./backend:/app
+      - type: bind
+        source: ./backend
+        target: /app
+        consistency: cached
+    working_dir: /app/gateway
+    command: ["air", "-c", ".air.toml"]
     environment:
       DATABASE_URL: postgres://${POSTGRES_USER:-blockmesh}:${POSTGRES_PASSWORD:-blockmesh}@postgres:5432/${POSTGRES_DB:-blockmesh}
       REDIS_ADDR: redis:6379
@@ -58,13 +70,18 @@ services:
 
   admin:
     build:
-      context: ./backend
-      dockerfile: admin/Dockerfile.dev
+      context: .
+      dockerfile: .docker/dev/dev-admin.Dockerfile
     restart: unless-stopped
     ports:
       - "8081:8081"
     volumes:
-      - ./backend:/app
+      - type: bind
+        source: ./backend
+        target: /app
+        consistency: cached
+    working_dir: /app/admin
+    command: ["air", "-c", ".air.toml"]
     environment:
       DATABASE_URL: postgres://${POSTGRES_USER:-blockmesh}:${POSTGRES_PASSWORD:-blockmesh}@postgres:5432/${POSTGRES_DB:-blockmesh}
       ADMIN_SECRET: ${ADMIN_SECRET:-devsecret}
@@ -76,11 +93,16 @@ services:
 
   ingestor:
     build:
-      context: ./backend
-      dockerfile: ingestor/Dockerfile.dev
+      context: .
+      dockerfile: .docker/dev/dev-ingestor.Dockerfile
     restart: unless-stopped
     volumes:
-      - ./backend:/app
+      - type: bind
+        source: ./backend
+        target: /app
+        consistency: cached
+    working_dir: /app/ingestor
+    command: ["air", "-c", ".air.toml"]
     environment:
       DATABASE_URL: postgres://${POSTGRES_USER:-blockmesh}:${POSTGRES_PASSWORD:-blockmesh}@postgres:5432/${POSTGRES_DB:-blockmesh}
       RPC_ENDPOINT_1: ${RPC_ENDPOINT_1:-https://ethereum-sepolia-rpc.publicnode.com}
@@ -92,14 +114,20 @@ services:
 
   web:
     build:
-      context: ./web
-      dockerfile: Dockerfile.dev
+      context: .
+      dockerfile: .docker/dev/dev-web.Dockerfile
     restart: unless-stopped
     ports:
       - "3000:5173"
     volumes:
-      - ./web:/app
-      - /app/node_modules
+      - type: bind
+        source: ./web
+        target: /app
+        consistency: cached
+      - type: volume
+        target: /app/node_modules
+    working_dir: /app
+    command: ["npm", "run", "dev", "--", "--host"]
     environment:
       - NODE_ENV=development
     depends_on:

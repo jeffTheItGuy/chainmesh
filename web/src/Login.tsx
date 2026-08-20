@@ -45,8 +45,14 @@ export default function Login({ onAuthenticated, onBack }: LoginProps) {
           </button>
         )}
         <div className="login-mark">
-          <span className="login-mark-dot" />
-          BlockMesh
+          <img
+            src="/logo/icon.svg"
+            alt=""
+            width={20}
+            height={20}
+            style={{ display: 'inline-block' }}
+          />
+          ChainMesh
         </div>
         <h1 className="login-title">Sign in to the console</h1>
         <p className="login-sub">Enter the admin secret configured on this deployment.</p>

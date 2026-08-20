@@ -16,6 +16,12 @@ export default defineConfig({
   server: {
     port: 5173,
     host: true,
+    watch: {
+      usePolling: true,
+    },
+    hmr: {
+      clientPort: 3000,
+    },
     proxy: {
       '/api': {
         target: 'http://admin:8081',

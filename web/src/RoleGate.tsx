@@ -9,8 +9,14 @@ export default function RoleGate({ onViewer, onAdmin, onLearnMore }: RoleGatePro
     <div className="login-shell">
       <div className="gate-card">
         <div className="login-mark">
-          <span className="login-mark-dot" />
-          BlockMesh
+          <img
+            src="/logo/icon.svg"
+            alt=""
+            width={20}
+            height={20}
+            style={{ display: 'inline-block' }}
+          />
+          ChainMesh
         </div>
         <h1 className="login-title">How do you want to continue?</h1>
         <p className="login-sub">
@@ -35,7 +41,7 @@ export default function RoleGate({ onViewer, onAdmin, onLearnMore }: RoleGatePro
             className="btn btn-ghost btn-sm"
             onClick={onLearnMore}
           >
-            Learn more about BlockMesh
+            Learn more about ChainMesh
           </button>
         </div>
       </div>
