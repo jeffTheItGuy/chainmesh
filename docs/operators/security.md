@@ -13,8 +13,9 @@ This document covers BlockMesh's security model, hardening recommendations, and 
 5. [Network Security](#network-security)
 6. [Database Security](#database-security)
 7. [Redis Security](#redis-security)
-8. [Operational Security](#operational-security)
-9. [Security Checklist](#security-checklist)
+8. [Audit Logging](#audit-logging)
+9. [Operational Security](#operational-security)
+10. [Security Checklist](#security-checklist)
 
 ---
 
@@ -24,7 +25,7 @@ This document covers BlockMesh's security model, hardening recommendations, and 
 
 | Threat | Mitigation |
 |--------|-----------|
-| **Unauthorized API access** | Bearer token auth, SHA-256 key hashing, key rotation |
+| **Unauthorized API access** | Bearer token auth, bcrypt key hashing, key rotation |
 | **Timing attacks on secrets** | Constant-time comparison for admin secret |
 | **Rate limit bypass** | Redis-backed counters with atomic INCR+EXPIRE (Lua script) |
 | **Credential exposure in logs** | API keys never logged; endpoint URLs redacted in health responses |
@@ -32,6 +33,7 @@ This document covers BlockMesh's security model, hardening recommendations, and 
 | **Database credential leaks** | Connection strings via env vars, not config files |
 | **Replay attacks** | Request IDs for tracing; no session tokens for API keys |
 | **DoS via large payloads** | 2MB body limit on gateway; 1MB on admin API |
+| **SSRF via malicious RPC URLs** | Endpoint validation blocks loopback, private, and link-local IPs |
 
 ### What BlockMesh Does NOT Protect Against (Out of Scope)
 
@@ -56,10 +58,11 @@ This document covers BlockMesh's security model, hardening recommendations, and 
 **Code reference:**
 ```go
 // backend/admin/main.go
-func adminAuth(secret string, next http.HandlerFunc) http.HandlerFunc {
+func adminAuth(secret string, db *postgres.DB, next http.HandlerFunc) http.HandlerFunc {
     return func(w http.ResponseWriter, r *http.Request) {
         provided := r.Header.Get("X-Admin-Secret")
         if !util.ConstantTimeEqual(provided, secret) {
+            // Failed attempts are logged to audit_logs
             writeErr(w, http.StatusForbidden, "forbidden")
             return
         }
@@ -72,6 +75,7 @@ func adminAuth(secret string, next http.HandlerFunc) http.HandlerFunc {
 - Minimum 32 characters, random generation
 - Stored in secret manager, never in git
 - Admin API refuses to start if unset
+- Failed attempts are recorded in the `audit_logs` table with IP and User-Agent
 
 ### Tenant Authentication
 
@@ -79,27 +83,23 @@ func adminAuth(secret string, next http.HandlerFunc) http.HandlerFunc {
 
 **Flow:**
 1. Extract key from header
-2. Hash via SHA-256
-3. Lookup `key_hash` in `api_keys` table
-4. Verify `revoked_at IS NULL`
-5. Update `last_used_at = NOW()`
+2. Extract the 12-character prefix
+3. Query `api_keys` for rows matching that prefix with `revoked_at IS NULL`
+4. For each candidate, verify the full key against the stored bcrypt hash
+5. On match: update `last_used_at = NOW()`
 6. Return tenant context
 
 **Code reference:**
 ```go
 // backend/shared/storage/postgres/tenant_store.go
-hash := util.HashAPIKey(key)
-row := d.pool.QueryRow(ctx, `
-    WITH used_key AS (
-        UPDATE api_keys
-        SET last_used_at = NOW()
-        WHERE key_hash = $1 AND revoked_at IS NULL
-        RETURNING tenant_id
-    )
-    SELECT t.id, t.name, ...
-    FROM tenants t
-    JOIN used_key k ON t.id = k.tenant_id
-`, hash)
+prefix := util.APIKeyPrefix(key)
+rows, err := d.pool.Query(ctx, `
+    SELECT id, key_hash, tenant_id
+    FROM api_keys
+    WHERE key_prefix = $1
+      AND revoked_at IS NULL
+`, prefix)
+// ... for each row, verify with bcrypt ...
 ```
 
 ---
@@ -121,7 +121,7 @@ bm_live_<32-character-hex>
 | What | Where | Notes |
 |------|-------|-------|
 | Full key | **Nowhere** | Never stored |
-| SHA-256 hash | `api_keys.key_hash` | Used for lookup |
+| bcrypt hash | `api_keys.key_hash` | Used for verification |
 | 12-char prefix | `api_keys.key_prefix` | Display only (e.g., "bm_live_4f8a") |
 | Revocation status | `api_keys.revoked_at` | NULL = active, timestamp = revoked |
 
@@ -203,11 +203,21 @@ func redactURL(rawURL string) string {
 **Example:**
 ```json
 {
-  "url": "eth-mainnet.g.alchemy.com/***",
+  "url": "eth-mainnet.g.alchemy.com/**",
   "healthy": true,
   "latency_ms": 82
 }
 ```
+
+### SSRF Protection
+
+All RPC endpoints added via the Admin API are validated before storage:
+
+- Only `http` and `https` schemes are allowed
+- Hostnames are resolved and all returned IPs are checked
+- Loopback, private, link-local, multicast, and unspecified IPs are rejected
+
+This prevents administrators from accidentally (or maliciously) configuring endpoints that target internal services.
 
 ### User-Agent Header
 
@@ -233,10 +243,10 @@ traefik:
 # Do NOT expose these:
 # gateway:
 #   ports:
-#     - "8080:8080"  # ❌ Security risk
+#     - "8080:8080"  # Security risk
 # admin:
 #   ports:
-#     - "8081:8081"  # ❌ Security risk
+#     - "8081:8081"  # Security risk
 ```
 
 **Kubernetes:**
@@ -270,11 +280,12 @@ GRANT USAGE, SELECT ON ALL SEQUENCES IN SCHEMA public TO blockmesh_app;
 
 | Data | Sensitivity | Protection |
 |------|------------|------------|
-| `api_keys.key_hash` | High | SHA-256, irreversible |
+| `api_keys.key_hash` | High | bcrypt, irreversible |
 | `api_keys.key_prefix` | Low | First 12 chars only |
 | `tenants.name` | Low | Business data |
 | `request_logs` | Medium | Contains method/status, not payloads |
 | `blockchain_configs.rpc_endpoint_*` | High | Provider API keys in URLs |
+| `audit_logs` | Medium | Immutable record of admin actions |
 
 **Note:** `blockchain_configs` stores full RPC URLs including provider API keys. Access control on the admin API is critical.
 
@@ -325,6 +336,40 @@ Prevents Redis from consuming all host memory under cache pressure.
 
 ---
 
+## Audit Logging
+
+BlockMesh records an immutable audit trail of all admin actions and authentication events to the `audit_logs` table.
+
+### What Is Logged
+
+| Event | Action | Details Captured |
+|-------|--------|-----------------|
+| Admin auth failure | `ADMIN_AUTH_FAILURE` | IP, User-Agent, reason |
+| Tenant created | `CREATE_TENANT` | Name, plan, quotas, network ID |
+| Tenant updated | `UPDATE_TENANT` | Changed fields |
+| Tenant deleted | `DELETE_TENANT` | Tenant ID |
+| API key rotated | `ROTATE_API_KEY` | Tenant ID |
+| Network created | `CREATE_BLOCKCHAIN_CONFIG` | Name, chain ID |
+| Network updated | `UPDATE_BLOCKCHAIN_CONFIG` | Changed fields |
+| Network deleted | `DELETE_BLOCKCHAIN_CONFIG` | Network ID |
+
+### Querying Audit Logs
+
+Administrators can query audit logs via the Admin API:
+
+```bash
+curl "http://localhost:8081/audit-logs?limit=50&offset=0" \
+  -H "X-Admin-Secret: $ADMIN_SECRET"
+```
+
+### Design
+
+- Writes are fire-and-forget (3-second timeout) so they never block the admin API response
+- Records include client IP and User-Agent for forensics
+- The table is append-only with no update or delete paths in the application
+
+---
+
 ## Operational Security
 
 ### Secret Management
@@ -333,8 +378,8 @@ Prevents Redis from consuming all host memory under cache pressure.
 |--------|---------|----------|
 | `ADMIN_SECRET` | Secret manager (K8s secrets, Vault, 1Password) | On suspected compromise or quarterly |
 | `POSTGRES_PASSWORD` | Same as above | On suspected compromise or annually |
-| API keys | Database (hashed) | On leak or per tenant policy |
-| Provider RPC URLs | Database (blockchain_configs) | On provider key rotation |
+| API keys | Database (bcrypt hashed) | On leak or per tenant policy |
+| Provider RPC URLs | Database (`blockchain_configs`) | On provider key rotation |
 
 ### Log Sanitization
 
@@ -395,6 +440,7 @@ Before going to production, verify:
 - [ ] Domain uses valid TLS certificate (Let's Encrypt or custom)
 - [ ] Security headers are set (CSP, HSTS, X-Frame-Options)
 - [ ] Prometheus metrics endpoint is not publicly exposed (or is authenticated)
+- [ ] Audit logging is enabled and monitored
 
 ---
 

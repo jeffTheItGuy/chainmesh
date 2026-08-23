@@ -2,6 +2,8 @@
 
 This guide covers setting up the BlockMesh development environment locally. You'll run the Go backend services, React frontend, PostgreSQL, and Redis either natively or via Docker.
 
+For production deployment instructions, see [deploy.md](../operators/deploy.md) (Docker Compose) or [deploy-k3s.md](../operators/deploy-k3s.md) (Kubernetes).
+
 ---
 
 ## Table of Contents
@@ -202,6 +204,7 @@ source .env
 ```bash
 # Apply all migrations
 psql -U blockmesh -d blockmesh -f backend/database/migrations/001_init.up.sql
+psql -U blockmesh -d blockmesh -f backend/database/migrations/002_audit_logs.sql
 psql -U blockmesh -d blockmesh -f backend/database/migrations/002_blockchain_config.sql
 psql -U blockmesh -d blockmesh -f backend/database/migrations/003_multi_network.sql
 psql -U blockmesh -d blockmesh -f backend/database/migrations/004_api_keys.sql
@@ -255,14 +258,14 @@ blockmesh/
 │   │   ├── main.go           # HTTP server, middleware chain
 │   │   ├── manager.go        # Blockchain client lifecycle
 │   │   ├── middleware/
-│   │   │   ├── auth.go       # API key authentication
+│   │   │   ├── auth.go       # API key authentication (bcrypt)
 │   │   │   ├── ratelimit.go  # Redis rate limiting
 │   │   │   └── requestid.go  # Request tracing
 │   │   └── proxy/
 │   │       └── proxy.go      # RPC forwarding, caching, telemetry
 │   │
 │   ├── admin/                # Management API (:8081)
-│   │   └── main.go           # Tenant/network CRUD, stats
+│   │   └── main.go           # Tenant/network CRUD, stats, audit logs
 │   │
 │   ├── ingestor/             # Block indexer
 │   │   └── main.go           # Polls networks, stores blocks
@@ -278,7 +281,7 @@ blockmesh/
 │   │   │   ├── postgres/     # Database queries & connection pool
 │   │   │   └── redis/        # Cache & rate limit operations
 │   │   ├── telemetry/        # Async usage recording
-│   │   └── util/             # API key generation, hashing
+│   │   └── util/             # API key generation, hashing, SSRF validation
 │   │
 │   ├── database/
 │   │   └── migrations/       # Schema evolution SQL

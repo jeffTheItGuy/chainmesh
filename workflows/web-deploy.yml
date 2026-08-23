@@ -9,17 +9,22 @@ env:
   SERVICE_PORT: 80
 jobs:
   deploy:
-    runs-on: self-hosted
+    runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - name: Setup SSH and Copy Files to Remote
+      - name: Setup SSH
+        env:
+          REMOTE_SERVER: ${{ secrets.REMOTE_SERVER }}
+        run: |
+          mkdir -p ~/.ssh && chmod 700 ~/.ssh
+          echo "${{ secrets.SSH_PRIVATE_KEY }}" > ~/.ssh/id_rsa && chmod 600 ~/.ssh/id_rsa
+          ssh-keyscan -H "$REMOTE_SERVER" >> ~/.ssh/known_hosts 2>/dev/null || true
+      - name: Copy Files to Remote
         env:
           REMOTE_SERVER: ${{ secrets.REMOTE_SERVER }}
           REMOTE_USER: ${{ secrets.REMOTE_USER }}
           REMOTE_WORKSPACE: ${{ secrets.REMOTE_DEPLOY_DIR }}/web-${{ github.run_id }}
         run: |
-          mkdir -p ~/.ssh && chmod 700 ~/.ssh
-          ssh-keyscan -H "$REMOTE_SERVER" >> ~/.ssh/known_hosts 2>/dev/null || true
           ssh -o StrictHostKeyChecking=yes "$REMOTE_USER@$REMOTE_SERVER" "rm -rf $REMOTE_WORKSPACE && mkdir -p $REMOTE_WORKSPACE/.helm && mkdir -p $REMOTE_WORKSPACE/web"
           scp -o StrictHostKeyChecking=yes -r .helm/web "$REMOTE_USER@$REMOTE_SERVER:$REMOTE_WORKSPACE/.helm/"
           scp -o StrictHostKeyChecking=yes -r web/* "$REMOTE_USER@$REMOTE_SERVER:$REMOTE_WORKSPACE/web/"

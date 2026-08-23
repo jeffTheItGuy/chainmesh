@@ -1,6 +1,6 @@
 # Database Schema
 
-BlockMesh uses PostgreSQL 15 with pgx/v5. The schema evolves through numbered migrations and supports multi-tenant, multi-network operation.
+ChainMesh uses PostgreSQL 15 with pgx/v5. The schema evolves through numbered migrations and supports multi-tenant, multi-network operation.
 
 ---
 
@@ -10,6 +10,7 @@ BlockMesh uses PostgreSQL 15 with pgx/v5. The schema evolves through numbered mi
 |------|---------|
 | `001_init.up.sql` | Core tables: `tenants`, `usage`, `blocks` |
 | `001_init.down.sql` | Drop core tables |
+| `002_audit_logs.sql` | Admin audit trail |
 | `002_blockchain_config.sql` | Add `blockchain_configs` table |
 | `003_multi_network.sql` | Multi-network support: FKs, unique constraints, indexes |
 | `004_api_keys.sql` | Separate `api_keys` table; hash-based auth |
@@ -45,17 +46,16 @@ BlockMesh uses PostgreSQL 15 with pgx/v5. The schema evolves through numbered mi
          │    ┌─────────┐      ┌─────────────┐      ┌───────────┐
          │    │  usage  │      │  api_keys   │      │request_logs│
          │    ├─────────┤      ├─────────────┤      ├───────────┤
-         └───▶│network_ │      │ id (PK)     │      │ id (PK)   │
-            │ id (FK)  │      │ tenant_id   │◀─────│ tenant_id │
-            │ tenant_id│◀─────│ key_hash    │      │ network_id│
-            │ method   │      │ key_prefix  │      │ method    │
-            │ count    │      │ revoked_at  │      │ status    │
-            │ bytes_in │      │ last_used_at│      │ latency_ms│
-            │ period   │      │ created_at  │      │ cache_hit │
-            │ (PK: t,m │      └─────────────┘      │ bytes_in  │
-            │  ,period)│                           │ request_id│
-            └──────────┘                           │ created_at│
-                                                   └───────────┘
+         └───▶│network_ │      │ id (PK)     │◀─────│ tenant_id │
+            │ id (FK)  │      │ tenant_id   │      │ network_id│
+            │ tenant_id│◀─────│ key_hash    │      │ method    │
+            │ method   │      │ key_prefix  │      │ status    │
+            │ count    │      │ revoked_at  │      │ latency_ms│
+            │ bytes_in │      │ last_used_at│      │ cache_hit │
+            │ period   │      │ created_at  │      │ bytes_in  │
+            │ (PK: t,m │      └─────────────┘      │ request_id│
+            │  ,period)│                           │ created_at│
+            └──────────┘                           └───────────┘
 ┌─────────────────────┐
 │       blocks        │
 ├─────────────────────┤
@@ -84,9 +84,23 @@ BlockMesh uses PostgreSQL 15 with pgx/v5. The schema evolves through numbered mi
 │ cache_hits                   │
 │ avg_latency_ms               │
 │ p95_latency_ms               │
-│ (unique: bucket, net, meth, │
+│ (unique: bucket, net, meth,  │
 │  status, cache_hit)          │
 └──────────────────────────────┘
+
+┌─────────────────────┐
+│     audit_logs      │
+├─────────────────────┤
+│ id (PK)             │
+│ actor               │
+│ action              │
+│ resource_type       │
+│ resource_id         │
+│ details (JSONB)     │
+│ ip_address          │
+│ user_agent          │
+│ created_at          │
+└─────────────────────┘
 ```
 
 ---
@@ -125,7 +139,7 @@ Stores hashed API keys with rotation support. A tenant may have multiple keys ov
 | `id` | `UUID` | PK, `gen_random_uuid()` | System-generated |
 | `tenant_id` | `UUID` | NOT NULL, FK → `tenants(id)`, ON DELETE CASCADE | |
 | `name` | `TEXT` | NOT NULL, DEFAULT 'default' | Human-readable label |
-| `key_hash` | `TEXT` | NOT NULL, UNIQUE | SHA-256 of full key |
+| `key_hash` | `TEXT` | NOT NULL, UNIQUE | bcrypt hash of full key |
 | `key_prefix` | `TEXT` | NOT NULL | First 12 chars of key (for display) |
 | `revoked_at` | `TIMESTAMPTZ` | nullable | Set on rotation or deletion |
 | `last_used_at` | `TIMESTAMPTZ` | nullable | Updated on each successful auth |
@@ -136,8 +150,8 @@ Stores hashed API keys with rotation support. A tenant may have multiple keys ov
 - `idx_api_keys_key_hash` — fast auth lookup (critical path)
 
 **Security model:**
-- Full API keys are never stored. Only `SHA-256(key)` and a 12-char prefix.
-- Auth query: hash provided key → lookup `key_hash` → update `last_used_at`
+- Full API keys are never stored. Only a `bcrypt` hash and a 12-char prefix.
+- Auth query: extract prefix → query rows matching prefix → bcrypt verify against `key_hash` → update `last_used_at`
 - Revoked keys have `revoked_at` set; auth query filters `revoked_at IS NULL`
 
 ---
@@ -161,6 +175,7 @@ Dynamic configuration for blockchain networks. Managed entirely via Admin API �
 - Gateway reloads every 15 seconds; only `enabled=true` configs become active
 - Deleting a config uses a transaction to unlink `tenants.blockchain_network_id` and `blocks.network_id` first (avoids FK violations)
 - Earliest enabled config by `created_at` serves as the default network
+- New endpoints are validated via SSRF protection (loopback, private, and link-local IPs are rejected)
 
 ---
 
@@ -280,13 +295,49 @@ Pre-aggregated stats for fast dashboard queries. Refreshed every 60 seconds.
 
 ---
 
+### `audit_logs`
+
+Immutable record of admin actions and authentication events. Written synchronously in a fire-and-forget goroutine.
+
+| Column | Type | Constraints | Notes |
+|--------|------|-------------|-------|
+| `id` | `BIGSERIAL` | PK | Auto-increment |
+| `actor` | `TEXT` | NOT NULL | Who performed the action (e.g., "admin") |
+| `action` | `TEXT` | NOT NULL | Action type (e.g., `CREATE_TENANT`, `ADMIN_AUTH_FAILURE`) |
+| `resource_type` | `TEXT` | NOT NULL | Category of resource affected |
+| `resource_id` | `TEXT` | nullable | Specific resource identifier |
+| `details` | `JSONB` | nullable | Structured metadata about the event |
+| `ip_address` | `INET` | nullable | Client IP address |
+| `user_agent` | `TEXT` | nullable | Client User-Agent string |
+| `created_at` | `TIMESTAMPTZ` | NOT NULL, DEFAULT NOW() | Event timestamp |
+
+**Indexes:**
+- `idx_audit_logs_created_at DESC` — chronological listing
+- `idx_audit_logs_action` — filter by action type
+- `idx_audit_logs_resource` — filter by resource type and ID
+- `idx_audit_logs_actor` — filter by actor
+
+**Recorded events:**
+| Action | Trigger |
+|--------|---------|
+| `ADMIN_AUTH_FAILURE` | Invalid `X-Admin-Secret` submitted |
+| `CREATE_TENANT` | New tenant created via API or dashboard |
+| `UPDATE_TENANT` | Tenant quotas or network assignment changed |
+| `DELETE_TENANT` | Tenant permanently removed |
+| `ROTATE_API_KEY` | Tenant API key rotated |
+| `CREATE_BLOCKCHAIN_CONFIG` | New network added |
+| `UPDATE_BLOCKCHAIN_CONFIG` | Network endpoints or status changed |
+| `DELETE_BLOCKCHAIN_CONFIG` | Network removed |
+
+---
+
 ## Key Design Decisions
 
 ### 1. Separate `api_keys` Table (Migration 004)
 
 **Why:** The original `tenants.api_key` stored plaintext. Migration 004:
 - Made `tenants.api_key` nullable (backward compatibility)
-- Created `api_keys` with hashed storage
+- Created `api_keys` with bcrypt hashed storage
 - Enables key rotation (multiple rows per tenant over time)
 - Supports multiple named keys per tenant (future-proofing)
 
@@ -307,6 +358,10 @@ Pre-aggregated stats for fast dashboard queries. Refreshed every 60 seconds.
 ### 5. `ON DELETE CASCADE` on Tenant FKs
 
 **Why:** Deleting a tenant should cleanly remove all associated data (keys, usage, logs). This is intentional — no soft-delete on tenants.
+
+### 6. Audit Logging (Migration 002)
+
+**Why:** Admin actions modify tenant credentials and network routing. An immutable audit trail is required for security review and compliance. Writes are fire-and-forget (3-second timeout) so they never block the admin API response.
 
 ---
 
@@ -347,6 +402,15 @@ SELECT network_id, MAX(number) as latest, COUNT(*) as total_24h
 FROM blocks
 WHERE created_at >= NOW() - INTERVAL '24 hours'
 GROUP BY network_id;
+```
+
+### Recent admin audit events
+```sql
+SELECT action, resource_type, resource_id, details, ip_address, created_at
+FROM audit_logs
+WHERE created_at >= NOW() - INTERVAL '24 hours'
+ORDER BY created_at DESC
+LIMIT 50;
 ```
 
 ---

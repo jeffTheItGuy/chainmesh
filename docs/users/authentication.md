@@ -45,13 +45,14 @@ curl -X POST http://localhost:8080/v1/ \
 ## How It Works
 
 1. You send the full API key in the `Authorization` header
-2. BlockMesh hashes the key using SHA-256
-3. The hash is looked up in the `api_keys` database table
-4. If found and not revoked, the request is authenticated
-5. The `last_used_at` timestamp is updated
-6. Your tenant context (quotas, network assignment) is loaded
+2. BlockMesh extracts the **12-character prefix** from the key
+3. Queries the `api_keys` table for rows matching that prefix with `revoked_at IS NULL`
+4. For each candidate row, verifies the full key against the stored **bcrypt** hash
+5. If a match is found and the key is not revoked, the request is authenticated
+6. The `last_used_at` timestamp is updated
+7. Your tenant context (quotas, network assignment) is loaded
 
-**Important:** The full key is never stored. Only its SHA-256 hash and a 12-character prefix are kept in the database.
+**Important:** The full key is never stored. Only its bcrypt hash and a 12-character prefix are kept in the database.
 
 ---
 

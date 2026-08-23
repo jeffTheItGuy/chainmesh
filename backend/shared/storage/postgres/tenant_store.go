@@ -2,50 +2,53 @@ package postgres
 
 import (
 	"context"
+	"fmt"
+
 	"github.com/yourname/blockmesh/shared/model"
 	"github.com/yourname/blockmesh/shared/util"
 )
 
 func (d *DB) GetTenantByAPIKey(ctx context.Context, key string) (*model.Tenant, error) {
-	hash := util.HashAPIKey(key)
-	row := d.pool.QueryRow(ctx,
+	prefix := util.APIKeyPrefix(key)
+
+	rows, err := d.pool.Query(ctx,
 		`
-WITH used_key AS (
-UPDATE api_keys
-SET last_used_at = NOW()
-WHERE key_hash = $1
-AND revoked_at IS NULL
-RETURNING tenant_id
-)
-SELECT
-t.id,
-t.name,
-COALESCE(t.blockchain_network_id::text, ''),
-COALESCE(t.quota_rpm, 0),
-COALESCE(t.quota_rps, 0),
-COALESCE(t.quota_daily, 0),
-COALESCE(t.plan, 'free'),
-t.created_at
-FROM tenants t
-JOIN used_key k ON t.id = k.tenant_id
-`,
-		hash,
-	)
-	t := &model.Tenant{}
-	err := row.Scan(
-		&t.ID,
-		&t.Name,
-		&t.BlockchainNetworkID,
-		&t.QuotaRPM,
-		&t.QuotaRPS,
-		&t.QuotaDaily,
-		&t.Plan,
-		&t.CreatedAt,
+		SELECT id, key_hash, tenant_id
+		FROM api_keys
+		WHERE key_prefix = $1
+		  AND revoked_at IS NULL
+		`,
+		prefix,
 	)
 	if err != nil {
 		return nil, err
 	}
-	return t, nil
+	defer rows.Close()
+
+	var tenantID, keyID string
+	for rows.Next() {
+		var id, hash, tid string
+		if err := rows.Scan(&id, &hash, &tid); err != nil {
+			return nil, err
+		}
+		if util.VerifyAPIKey(key, hash) {
+			tenantID = tid
+			keyID = id
+			break
+		}
+	}
+
+	if tenantID == "" {
+		return nil, fmt.Errorf("unauthorized")
+	}
+
+	// Update last_used_at for the matched key
+	_, _ = d.pool.Exec(ctx,
+		`UPDATE api_keys SET last_used_at = NOW() WHERE id = $1`,
+		keyID,
+	)
+
+	return d.GetTenantByID(ctx, tenantID)
 }
 
 func (d *DB) GetTenantByID(ctx context.Context, id string) (*model.Tenant, error) {

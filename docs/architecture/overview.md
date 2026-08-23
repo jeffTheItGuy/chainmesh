@@ -1,6 +1,6 @@
 # Architecture Overview
 
-BlockMesh is composed of four Go services, one React frontend, PostgreSQL, and Redis. Each component has a single responsibility and communicates through well-defined interfaces.
+ChainMesh is composed of four Go services, one React frontend, PostgreSQL, and Redis. Each component has a single responsibility and communicates through well-defined interfaces.
 
 ---
 
@@ -8,7 +8,7 @@ BlockMesh is composed of four Go services, one React frontend, PostgreSQL, and R
 
 ```
 ┌─────────────────────────────────────────────────────────────────────────────┐
-│                              BlockMesh Stack                                 │
+│                              ChainMesh Stack                                 │
 ├─────────────────────────────────────────────────────────────────────────────┤
 │                                                                              │
 │   ┌──────────────┐     ┌──────────────┐     ┌──────────────┐               │
@@ -62,6 +62,8 @@ BlockMesh is composed of four Go services, one React frontend, PostgreSQL, and R
   - CRUD for tenants, blockchain networks, and usage data
   - Stats aggregation via raw queries or materialized views
   - Connection testing for RPC endpoints (`eth_chainId` probe)
+  - Audit logging for all state-changing operations and auth failures
+  - Exposes `/audit-logs` for security review
 
 ### Ingestor (`backend/ingestor/`)
 - **Role:** Background block indexer
@@ -82,7 +84,7 @@ BlockMesh is composed of four Go services, one React frontend, PostgreSQL, and R
 
 ### PostgreSQL (`backend/database/migrations/`)
 - **Role:** Persistent state
-- **Stores:** tenants, hashed API keys, request logs, usage aggregates, blocks, network configs
+- **Stores:** tenants, hashed API keys, request logs, usage aggregates, blocks, network configs, audit logs
 - **Key feature:** `request_logs_rollup_1m` materialized view for fast dashboard queries
 
 ### Redis
@@ -108,10 +110,12 @@ Usage recording and request logging happen through a bounded async queue. If Pos
 The gateway reloads blockchain network configurations every 15 seconds without restart. New networks are picked up; removed networks are drained gracefully.
 
 ### 4. Secure by Default
-- API keys are SHA-256 hashed with a visible prefix
+- API keys are bcrypt hashed with a visible prefix
 - Admin secret uses `subtle.ConstantTimeCompare`
 - RPC endpoint URLs are redacted in health responses (host only, path hidden)
+- SSRF protection blocks loopback, private, and link-local IPs from RPC configs
 - Session-only storage for dashboard credentials
+- Immutable audit logging for all admin actions
 
 ### 5. Multi-Network, Multi-Tenant
 Each tenant can be pinned to a specific network or fall back to the default (earliest enabled by `created_at`). Blocks are stored per-network via composite unique key `(number, network_id)`.
@@ -138,4 +142,4 @@ Each tenant can be pinned to a specific network or fall back to the default (ear
 
 - [Data Flow](data-flow.md) — Request lifecycle in detail
 - [Database Schema](schema.md) — Entity relationships and migrations
-- [How to Deploy](../HowToDeploy.md) — Docker Compose and Kubernetes guides
+- [How to Deploy](../operators/deploy.md) — Docker Compose and Kubernetes guides

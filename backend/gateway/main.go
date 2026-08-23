@@ -39,7 +39,6 @@ func redactURL(rawURL string) string {
 	if err != nil {
 		return "redacted-endpoint"
 	}
-	// Keep the host (e.g., eth-mainnet.g.alchemy.com) but hide the path/API key
 	return u.Host + "/***"
 }
 
@@ -88,17 +87,17 @@ func main() {
 
 	mux.HandleFunc("/health/nodes", func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
-		
+
 		health := manager.Health()
 		safeHealth := make([]SafeNetworkHealth, len(health))
-		
+
 		for i, net := range health {
 			safeNodes := make([]SafeEndpointHealth, len(net.Nodes))
 			for j, node := range net.Nodes {
 				safeNodes[j] = SafeEndpointHealth{
 					URL:              redactURL(node.URL),
 					Healthy:          node.Healthy,
-					LatencyMs:        node.Latency.Milliseconds(), // Convert ns to ms
+					LatencyMs:        node.Latency.Milliseconds(),
 					LastCheck:        node.LastCheck,
 					ConsecutiveFails: node.ConsecutiveFails,
 					TotalRequests:    node.TotalRequests,
@@ -110,7 +109,7 @@ func main() {
 				Nodes:     safeNodes,
 			}
 		}
-		
+
 		json.NewEncoder(w).Encode(safeHealth)
 	})
 
@@ -123,9 +122,18 @@ func main() {
 		IdleTimeout:       120 * time.Second,
 	}
 
+	tlsCert := os.Getenv("TLS_CERT")
+	tlsKey := os.Getenv("TLS_KEY")
+
 	go func() {
-		log.Info("gateway starting", "addr", srv.Addr)
-		if err := srv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
+		log.Info("gateway starting", "addr", srv.Addr, "tls", tlsCert != "" && tlsKey != "")
+		var err error
+		if tlsCert != "" && tlsKey != "" {
+			err = srv.ListenAndServeTLS(tlsCert, tlsKey)
+		} else {
+			err = srv.ListenAndServe()
+		}
+		if err != nil && err != http.ErrServerClosed {
 			log.Error("server failed", "err", err)
 		}
 	}()

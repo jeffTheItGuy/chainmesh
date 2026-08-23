@@ -3,7 +3,7 @@ CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
 CREATE TABLE IF NOT EXISTS tenants (
     id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
     name VARCHAR(255) NOT NULL,
-    api_key VARCHAR(255) UNIQUE NOT NULL,
+    api_key VARCHAR(255) UNIQUE,
     quota_rpm INT NOT NULL DEFAULT 60,
     created_at TIMESTAMPTZ DEFAULT NOW()
 );
@@ -27,7 +27,4 @@ CREATE TABLE IF NOT EXISTS blocks (
     created_at TIMESTAMPTZ DEFAULT NOW()
 );
 
--- Seed a demo tenant
-INSERT INTO tenants (name, api_key, quota_rpm) 
-VALUES ('Demo User', 'demo-key', 1000)
-ON CONFLICT (api_key) DO NOTHING;
+-- No demo tenant seeded with a weak credential

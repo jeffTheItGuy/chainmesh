@@ -156,6 +156,17 @@ environment:
 - Increase if you see "telemetry worker shutdown timed out" warnings during deploys
 - Decrease if you need faster shutdown (may drop more records)
 
+### TLS
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `TLS_CERT` | — | Path to TLS certificate file |
+| `TLS_KEY` | — | Path to TLS private key file |
+
+**When to use:**
+- Set both to enable HTTPS directly on the Gateway and Admin API services
+- If using Traefik or another reverse proxy for TLS termination, leave these unset
+
 ### Traefik / TLS (Docker Compose)
 
 | Variable | Default | Description |
@@ -184,7 +195,10 @@ DOMAIN=localhost
 **Do not** set `RPC_ENDPOINT_1` or `RPC_ENDPOINT_2` in environment variables. These are managed dynamically via the Admin API:
 
 ```bash
-curl -X POST http://localhost:8081/blockchain   -H "X-Admin-Secret: $ADMIN_SECRET"   -H "Content-Type: application/json"   -d '{
+curl -X POST http://localhost:8081/blockchain \
+  -H "X-Admin-Secret: $ADMIN_SECRET" \
+  -H "Content-Type: application/json" \
+  -d '{
     "name": "Ethereum Mainnet",
     "rpc_endpoint_1": "https://ethereum-rpc.publicnode.com",
     "rpc_endpoint_2": "https://cloudflare-eth.com",
@@ -204,7 +218,10 @@ curl -X POST http://localhost:8081/blockchain   -H "X-Admin-Secret: $ADMIN_SECRE
 **Do not** set rate limits globally. These are per-tenant and managed via the Admin API:
 
 ```bash
-curl -X POST http://localhost:8081/tenants   -H "X-Admin-Secret: $ADMIN_SECRET"   -H "Content-Type: application/json"   -d '{
+curl -X POST http://localhost:8081/tenants \
+  -H "X-Admin-Secret: $ADMIN_SECRET" \
+  -H "Content-Type: application/json" \
+  -d '{
     "name": "Acme Corp",
     "quota_rps": 10,
     "quota_rpm": 1000,

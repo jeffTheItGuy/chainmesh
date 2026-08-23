@@ -22,6 +22,7 @@ A network configuration defines how BlockMesh connects to upstream blockchain RP
 
 - At least one reachable RPC endpoint (HTTPS recommended)
 - The endpoint must support `eth_chainId`
+- **SSRF protection is enforced:** Loopback, private, link-local, and multicast IP addresses are rejected. Only public `http` and `https` endpoints are accepted.
 
 ### Via Web Dashboard
 
@@ -324,6 +325,7 @@ Then assign tenants to specific networks as needed.
 - Check if the endpoint requires authentication (API key in URL)
 - Some providers block requests without proper `User-Agent` — BlockMesh sends `BlockMesh-Gateway/1.0`
 - Firewall or WAF may be blocking the gateway IP
+- **SSRF protection:** Loopback (`127.0.0.1`, `::1`), private (`10.x.x.x`, `192.168.x.x`, `172.16-31.x.x`), link-local, and multicast addresses are rejected. Only public endpoints are accepted.
 
 ---
 

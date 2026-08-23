@@ -1,6 +1,8 @@
 # Deploying BlockMesh
 
-This guide covers deploying BlockMesh on a single server via Docker Compose or on a Kubernetes cluster.
+This guide covers deploying BlockMesh on a single server via Docker Compose.
+
+For Kubernetes / K3s deployments using Helm and GitHub Actions, see [deploy-k3s.md](deploy-k3s.md).
 
 ---
 
@@ -8,28 +10,18 @@ This guide covers deploying BlockMesh on a single server via Docker Compose or o
 
 1. [Prerequisites](#prerequisites)
 2. [Docker Compose (Single Server)](#docker-compose-single-server)
-3. [Kubernetes / K3s](#kubernetes--k3s)
-4. [Environment Variables](#environment-variables)
-5. [First-Time Setup](#first-time-setup)
-6. [Troubleshooting](#troubleshooting)
+3. [Environment Variables](#environment-variables)
+4. [First-Time Setup](#first-time-setup)
+5. [Troubleshooting](#troubleshooting)
 
 ---
 
 ## Prerequisites
 
-### Docker Compose
-
 - Docker 24.0+ and Docker Compose v2
 - 1 vCPU, 1 GB RAM, 10 GB disk (minimum)
 - 2 vCPU, 2 GB RAM, 20 GB SSD (recommended)
 - Outbound internet access to RPC endpoints
-
-### Kubernetes
-
-- K3s, k0s, or any Kubernetes 1.28+ cluster
-- `kubectl` configured
-- Traefik or another ingress controller with cert-manager (for TLS)
-- 2 vCPU, 2 GB RAM, 20 GB disk (recommended)
 
 ---
 
@@ -114,7 +106,10 @@ Or via API:
 export ADMIN_SECRET=your-secret-here
 
 # Add a network
-curl -X POST http://localhost:8081/blockchain   -H "X-Admin-Secret: $ADMIN_SECRET"   -H "Content-Type: application/json"   -d '{
+curl -X POST http://localhost:8081/blockchain \
+  -H "X-Admin-Secret: $ADMIN_SECRET" \
+  -H "Content-Type: application/json" \
+  -d '{
     "name": "Ethereum Mainnet",
     "rpc_endpoint_1": "https://ethereum-rpc.publicnode.com",
     "rpc_endpoint_2": "https://cloudflare-eth.com",
@@ -123,82 +118,11 @@ curl -X POST http://localhost:8081/blockchain   -H "X-Admin-Secret: $ADMIN_SECRE
   }'
 
 # Create a tenant
-curl -X POST http://localhost:8081/tenants   -H "X-Admin-Secret: $ADMIN_SECRET"   -H "Content-Type: application/json"   -d '{"name":"My App","quota_rpm":1000}'
+curl -X POST http://localhost:8081/tenants \
+  -H "X-Admin-Secret: $ADMIN_SECRET" \
+  -H "Content-Type: application/json" \
+  -d '{"name":"My App","quota_rpm":1000}'
 ```
-
----
-
-## Kubernetes / K3s
-
-### Step 1: Build Images
-
-```bash
-make build-all
-```
-
-### Step 2: Import into K3s (or push to a registry)
-
-```bash
-for img in gateway admin ingestor web; do
-  docker save blockmesh-$img:latest | sudo k3s ctr images import -
-done
-```
-
-Or push to GHCR / Docker Hub:
-```bash
-docker tag blockmesh-gateway:latest ghcr.io/yourname/blockmesh-gateway:latest
-docker push ghcr.io/yourname/blockmesh-gateway:latest
-# Repeat for admin, ingestor, web
-```
-
-### Step 3: Create Namespace and Secrets
-
-```bash
-kubectl create namespace blockmesh
-
-kubectl create secret generic blockmesh-secrets   --from-literal=postgres-user="blockmesh"   --from-literal=postgres-password="your-strong-password"   --from-literal=database-url="postgres://blockmesh:your-strong-password@postgres:5432/blockmesh"   --from-literal=admin-secret="your-admin-secret"   --from-literal=redis-addr="redis:6379"   -n blockmesh
-```
-
-**Never commit secrets to git.** Use the example file as a template:
-```bash
-cp deployments/base/secrets-example.yaml deployments/base/secrets.yaml
-# Edit secrets.yaml with real values, then:
-kubectl apply -f deployments/base/secrets.yaml
-```
-
-### Step 4: Deploy
-
-```bash
-kubectl apply -k deployments/base/
-```
-
-### Step 5: Verify
-
-```bash
-kubectl get pods -n blockmesh
-kubectl logs -n blockmesh deployment/gateway
-kubectl logs -n blockmesh deployment/ingestor
-```
-
-### Step 6: Configure Ingress
-
-Edit `deployments/base/ingress.yaml` and replace `yourdomain.com` with your actual domain:
-
-```yaml
-spec:
-  tls:
-    - hosts:
-        - api.yourdomain.com
-        - admin.yourdomain.com
-        - dashboard.yourdomain.com
-```
-
-Apply:
-```bash
-kubectl apply -f deployments/base/ingress.yaml
-```
-
-Ensure your DNS points `api.yourdomain.com`, `admin.yourdomain.com`, and `dashboard.yourdomain.com` to your cluster's ingress IP.
 
 ---
 
@@ -221,6 +145,8 @@ Ensure your DNS points `api.yourdomain.com`, `admin.yourdomain.com`, and `dashbo
 | `TELEMETRY_DRAIN_TIMEOUT` | No | `2s` | Queue drain timeout on shutdown |
 | `DOMAIN` | No | `localhost` | Domain for Traefik TLS |
 | `ACME_EMAIL` | No | — | Let's Encrypt contact email |
+| `TLS_CERT` | No | — | Path to TLS certificate file |
+| `TLS_KEY` | No | — | Path to TLS private key file |
 
 > **Note:** `RPC_ENDPOINT_1` and `RPC_ENDPOINT_2` are **not** environment variables. Networks are configured dynamically via the Admin API. This prevents restart cycles when adding or changing endpoints.
 
@@ -242,7 +168,8 @@ curl http://localhost:8081/health
 # Expected: {"status":"ok"}
 
 # 2. At least one network is configured
-curl http://localhost:8081/blockchain   -H "X-Admin-Secret: $ADMIN_SECRET"
+curl http://localhost:8081/blockchain \
+  -H "X-Admin-Secret: $ADMIN_SECRET"
 # Expected: Array with at least one enabled network
 
 # 3. Gateway can see the network
@@ -250,7 +177,10 @@ curl http://localhost:8080/health/nodes
 # Expected: Array with network health status
 
 # 4. Tenant API key works
-curl -X POST http://localhost:8080/v1/   -H "Authorization: Bearer $API_KEY"   -H "Content-Type: application/json"   -d '{"jsonrpc":"2.0","method":"eth_chainId","params":[],"id":1}'
+curl -X POST http://localhost:8080/v1/ \
+  -H "Authorization: Bearer $API_KEY" \
+  -H "Content-Type: application/json" \
+  -d '{"jsonrpc":"2.0","method":"eth_chainId","params":[],"id":1}'
 # Expected: {"jsonrpc":"2.0","id":1,"result":"0x1"}
 ```
 
@@ -274,7 +204,9 @@ Common causes:
 
 1. Check upstream RPC endpoints are reachable:
    ```bash
-   curl -X POST https://ethereum-rpc.publicnode.com      -H "Content-Type: application/json"      -d '{"jsonrpc":"2.0","method":"eth_chainId","params":[],"id":1}'
+   curl -X POST https://ethereum-rpc.publicnode.com \
+     -H "Content-Type: application/json" \
+     -d '{"jsonrpc":"2.0","method":"eth_chainId","params":[],"id":1}'
    ```
 2. Check gateway logs:
    ```bash
@@ -292,7 +224,7 @@ Common causes:
    ```bash
    docker exec blockmesh-postgres-1 psql -U blockmesh -d blockmesh -c "\dt"
    ```
-   You should see `tenants`, `usage`, `blocks`, `blockchain_configs`, `api_keys`, and `request_logs` tables.
+   You should see `tenants`, `usage`, `blocks`, `blockchain_configs`, `api_keys`, `request_logs`, and `audit_logs` tables.
 3. If tables are missing, restart the admin service to trigger migration checks:
    ```bash
    docker compose restart admin
@@ -302,7 +234,10 @@ Common causes:
 
 Your admin set `ADMIN_SECRET` in `.env` but you're not sending it. Include the header:
 ```bash
-curl -X POST http://localhost:8081/tenants   -H "X-Admin-Secret: your-secret-here"   -H "Content-Type: application/json"   -d '{"name":"Test","quota_rpm":100}'
+curl -X POST http://localhost:8081/tenants \
+  -H "X-Admin-Secret: your-secret-here" \
+  -H "Content-Type: application/json" \
+  -d '{"name":"Test","quota_rpm":100}'
 ```
 
 ### Gateway returns `503 Service Unavailable`
@@ -321,3 +256,4 @@ curl -X POST http://localhost:8081/tenants   -H "X-Admin-Secret: your-secret-her
 - [Security](security.md) — Security hardening and threat model
 - [Adding Blockchain Networks](../HowToAddNetworks.md) — Network configuration
 - [Adding Tenants](../HowToAddTenants.md) — Tenant management
+- [deploy-k3s.md](deploy-k3s.md) — Kubernetes / K3s deployment

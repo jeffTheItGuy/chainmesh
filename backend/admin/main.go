@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"io"
+	"net"
 	"net/http"
 	"os"
 	"os/signal"
@@ -21,15 +22,74 @@ import (
 
 const maxAdminBodyBytes = 1 << 20 // 1 MB
 
-func adminAuth(secret string, next http.HandlerFunc) http.HandlerFunc {
+// AUDIT: adminAuth now accepts *postgres.DB so failed attempts can be logged.
+func adminAuth(secret string, db *postgres.DB, next http.HandlerFunc) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		provided := r.Header.Get("X-Admin-Secret")
 		if !util.ConstantTimeEqual(provided, secret) {
+			// AUDIT: capture request details before the goroutine
+			ip := r.Header.Get("X-Forwarded-For")
+			if ip == "" {
+				ip, _, _ = net.SplitHostPort(r.RemoteAddr)
+				if ip == "" {
+					ip = r.RemoteAddr
+				}
+			}
+			ua := r.UserAgent()
+
+			go func() {
+				ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+				defer cancel()
+
+				_ = db.RecordAuditLog(ctx, &model.AuditLog{
+					Actor:        "admin",
+					Action:       "ADMIN_AUTH_FAILURE",
+					ResourceType: "admin",
+					Details:      []byte(`{"reason":"invalid_secret"}`),
+					IPAddress:    ip,
+					UserAgent:    ua,
+					CreatedAt:    time.Now(),
+				})
+			}()
+
 			writeErr(w, http.StatusForbidden, "forbidden")
 			return
 		}
 		next(w, r)
 	}
+}
+
+// AUDIT: fire-and-forget helper for state-changing operations.
+func auditLog(db *postgres.DB, r *http.Request, action, resourceType, resourceID string, details map[string]any) {
+	ip := r.Header.Get("X-Forwarded-For")
+	if ip == "" {
+		ip, _, _ = net.SplitHostPort(r.RemoteAddr)
+		if ip == "" {
+			ip = r.RemoteAddr
+		}
+	}
+	ua := r.UserAgent()
+
+	var detailsJSON []byte
+	if details != nil {
+		detailsJSON, _ = json.Marshal(details)
+	}
+
+	go func() {
+		ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+		defer cancel()
+
+		_ = db.RecordAuditLog(ctx, &model.AuditLog{
+			Actor:        "admin",
+			Action:       action,
+			ResourceType: resourceType,
+			ResourceID:   resourceID,
+			Details:      detailsJSON,
+			IPAddress:    ip,
+			UserAgent:    ua,
+			CreatedAt:    time.Now(),
+		})
+	}()
 }
 
 func writeJSON(w http.ResponseWriter, status int, v any) {
@@ -63,7 +123,8 @@ func main() {
 		writeJSON(w, http.StatusOK, map[string]string{"status": "ok"})
 	})
 
-	mux.HandleFunc("/stats/summary", adminAuth(adminSecret, func(w http.ResponseWriter, r *http.Request) {
+	// AUDIT: pass db into adminAuth wrapper.
+	mux.HandleFunc("/stats/summary", adminAuth(adminSecret, db, func(w http.ResponseWriter, r *http.Request) {
 		rangeName := r.URL.Query().Get("range")
 		if rangeName == "" {
 			rangeName = "1h"
@@ -91,7 +152,7 @@ func main() {
 		writeJSON(w, http.StatusOK, summary)
 	}))
 
-	mux.HandleFunc("/tenants", adminAuth(adminSecret, func(w http.ResponseWriter, r *http.Request) {
+	mux.HandleFunc("/tenants", adminAuth(adminSecret, db, func(w http.ResponseWriter, r *http.Request) {
 		switch r.Method {
 		case http.MethodGet:
 			tenants, err := db.ListTenants(r.Context())
@@ -154,6 +215,17 @@ func main() {
 				writeErr(w, http.StatusInternalServerError, "database error")
 				return
 			}
+
+			// AUDIT: tenant created
+			auditLog(db, r, "CREATE_TENANT", "tenant", tenant.ID, map[string]any{
+				"name":                  req.Name,
+				"plan":                  req.Plan,
+				"quota_rpm":             req.QuotaRPM,
+				"quota_rps":             req.QuotaRPS,
+				"quota_daily":           req.QuotaDaily,
+				"blockchain_network_id": req.BlockchainNetworkID,
+			})
+
 			writeJSON(w, http.StatusCreated, map[string]any{
 				"id":                    tenant.ID,
 				"name":                  tenant.Name,
@@ -170,7 +242,7 @@ func main() {
 		}
 	}))
 
-	mux.HandleFunc("/tenants/", adminAuth(adminSecret, func(w http.ResponseWriter, r *http.Request) {
+	mux.HandleFunc("/tenants/", adminAuth(adminSecret, db, func(w http.ResponseWriter, r *http.Request) {
 		path := strings.TrimPrefix(r.URL.Path, "/tenants/")
 		parts := strings.Split(path, "/")
 		if len(parts) == 0 || parts[0] == "" {
@@ -240,6 +312,17 @@ func main() {
 					writeErr(w, http.StatusInternalServerError, "database error")
 					return
 				}
+
+				// AUDIT: tenant updated
+				auditLog(db, r, "UPDATE_TENANT", "tenant", tenantID, map[string]any{
+					"name":                  req.Name,
+					"plan":                  req.Plan,
+					"quota_rpm":             req.QuotaRPM,
+					"quota_rps":             req.QuotaRPS,
+					"quota_daily":           req.QuotaDaily,
+					"blockchain_network_id": req.BlockchainNetworkID,
+				})
+
 				writeJSON(w, http.StatusOK, map[string]any{"updated": true})
 			case http.MethodDelete:
 				err := db.DeleteTenant(r.Context(), tenantID)
@@ -247,6 +330,10 @@ func main() {
 					writeErr(w, http.StatusInternalServerError, "database error")
 					return
 				}
+
+				// AUDIT: tenant deleted
+				auditLog(db, r, "DELETE_TENANT", "tenant", tenantID, nil)
+
 				writeJSON(w, http.StatusOK, map[string]any{"deleted": true})
 			default:
 				writeErr(w, http.StatusMethodNotAllowed, "method not allowed")
@@ -265,13 +352,16 @@ func main() {
 				writeErr(w, http.StatusInternalServerError, "database error")
 				return
 			}
+
+			// AUDIT: key rotated
+			auditLog(db, r, "ROTATE_API_KEY", "tenant", tenantID, nil)
+
 			writeJSON(w, http.StatusOK, map[string]any{
 				"api_key": key,
 			})
 			return
 		}
 
-		// NEW: Admin usage lookup by tenant ID
 		if len(parts) == 2 && parts[1] == "usage" {
 			if r.Method != http.MethodGet {
 				writeErr(w, http.StatusMethodNotAllowed, "method not allowed")
@@ -288,7 +378,6 @@ func main() {
 				}
 			}
 
-			// Verify tenant exists
 			_, err := db.GetTenantByID(r.Context(), tenantID)
 			if err != nil {
 				writeErr(w, http.StatusNotFound, "tenant not found")
@@ -307,8 +396,7 @@ func main() {
 		writeErr(w, http.StatusNotFound, "not found")
 	}))
 
-	// REMOVED: The old /usage endpoint that required the API key in the query string
-
+	// PUBLIC: no adminAuth — block data is on-chain public data
 	mux.HandleFunc("/blocks", func(w http.ResponseWriter, r *http.Request) {
 		blocks, err := db.ListBlocks(r.Context(), 50)
 		if err != nil {
@@ -318,7 +406,7 @@ func main() {
 		writeJSON(w, http.StatusOK, blocks)
 	})
 
-	mux.HandleFunc("/blockchain/test", adminAuth(adminSecret, func(w http.ResponseWriter, r *http.Request) {
+	mux.HandleFunc("/blockchain/test", adminAuth(adminSecret, db, func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodPost {
 			writeErr(w, http.StatusMethodNotAllowed, "method not allowed")
 			return
@@ -337,6 +425,17 @@ func main() {
 			return
 		}
 
+		if err := util.ValidateRPCEndpoint(req.RPCEndpoint1); err != nil {
+			writeErr(w, http.StatusBadRequest, "invalid rpc_endpoint_1: "+err.Error())
+			return
+		}
+		if req.RPCEndpoint2 != "" {
+			if err := util.ValidateRPCEndpoint(req.RPCEndpoint2); err != nil {
+				writeErr(w, http.StatusBadRequest, "invalid rpc_endpoint_2: "+err.Error())
+				return
+			}
+		}
+
 		endpoints := []string{req.RPCEndpoint1}
 		if req.RPCEndpoint2 != "" {
 			endpoints = append(endpoints, req.RPCEndpoint2)
@@ -347,7 +446,7 @@ func main() {
 		if err != nil {
 			writeJSON(w, http.StatusOK, map[string]any{
 				"connected": false,
-				"error":     err.Error(),
+				"error":     "connection failed",
 			})
 			return
 		}
@@ -374,7 +473,7 @@ func main() {
 		})
 	}))
 
-	mux.HandleFunc("/blockchain", adminAuth(adminSecret, func(w http.ResponseWriter, r *http.Request) {
+	mux.HandleFunc("/blockchain", adminAuth(adminSecret, db, func(w http.ResponseWriter, r *http.Request) {
 		switch r.Method {
 		case http.MethodGet:
 			configs, err := db.ListBlockchainConfigs(r.Context())
@@ -400,6 +499,17 @@ func main() {
 				writeErr(w, http.StatusBadRequest, "name and rpc_endpoint_1 are required")
 				return
 			}
+			if err := util.ValidateRPCEndpoint(req.RPCEndpoint1); err != nil {
+				writeErr(w, http.StatusBadRequest, "invalid rpc_endpoint_1: "+err.Error())
+				return
+			}
+			if req.RPCEndpoint2 != "" {
+				if err := util.ValidateRPCEndpoint(req.RPCEndpoint2); err != nil {
+					writeErr(w, http.StatusBadRequest, "invalid rpc_endpoint_2: "+err.Error())
+					return
+				}
+			}
+
 			cfg := &model.BlockchainConfig{
 				Name:         req.Name,
 				RPCEndpoint1: req.RPCEndpoint1,
@@ -412,13 +522,20 @@ func main() {
 				writeErr(w, http.StatusInternalServerError, "database error")
 				return
 			}
+
+			// AUDIT: blockchain config created
+			auditLog(db, r, "CREATE_BLOCKCHAIN_CONFIG", "blockchain_config", saved.ID, map[string]any{
+				"name":    saved.Name,
+				"chain_id": saved.ChainID,
+			})
+
 			writeJSON(w, http.StatusCreated, saved)
 		default:
 			writeErr(w, http.StatusMethodNotAllowed, "method not allowed")
 		}
 	}))
 
-	mux.HandleFunc("/blockchain/", adminAuth(adminSecret, func(w http.ResponseWriter, r *http.Request) {
+	mux.HandleFunc("/blockchain/", adminAuth(adminSecret, db, func(w http.ResponseWriter, r *http.Request) {
 		id := strings.TrimPrefix(r.URL.Path, "/blockchain/")
 		if id == "" {
 			writeErr(w, http.StatusBadRequest, "network id required")
@@ -449,6 +566,17 @@ func main() {
 				writeErr(w, http.StatusBadRequest, "name and rpc_endpoint_1 are required")
 				return
 			}
+			if err := util.ValidateRPCEndpoint(req.RPCEndpoint1); err != nil {
+				writeErr(w, http.StatusBadRequest, "invalid rpc_endpoint_1: "+err.Error())
+				return
+			}
+			if req.RPCEndpoint2 != "" {
+				if err := util.ValidateRPCEndpoint(req.RPCEndpoint2); err != nil {
+					writeErr(w, http.StatusBadRequest, "invalid rpc_endpoint_2: "+err.Error())
+					return
+				}
+			}
+
 			cfg := &model.BlockchainConfig{
 				ID:           id,
 				Name:         req.Name,
@@ -461,19 +589,29 @@ func main() {
 				writeErr(w, http.StatusInternalServerError, "database error")
 				return
 			}
+
+			// AUDIT: blockchain config updated
+			auditLog(db, r, "UPDATE_BLOCKCHAIN_CONFIG", "blockchain_config", id, map[string]any{
+				"name":    req.Name,
+				"chain_id": req.ChainID,
+			})
+
 			writeJSON(w, http.StatusOK, map[string]any{"updated": true})
 		case http.MethodDelete:
 			if err := db.DeleteBlockchainConfig(r.Context(), id); err != nil {
 				writeErr(w, http.StatusInternalServerError, "database error")
 				return
 			}
+
+			// AUDIT: blockchain config deleted
+			auditLog(db, r, "DELETE_BLOCKCHAIN_CONFIG", "blockchain_config", id, nil)
+
 			writeJSON(w, http.StatusOK, map[string]any{"deleted": true})
 		default:
 			writeErr(w, http.StatusMethodNotAllowed, "method not allowed")
 		}
 	}))
 
-	// Public proxy: forward node health from gateway so unauthenticated viewers can see it
 	mux.HandleFunc("/gateway/health/nodes", func(w http.ResponseWriter, r *http.Request) {
 		gatewayAddr := os.Getenv("GATEWAY_ADDR")
 		if gatewayAddr == "" {
@@ -492,6 +630,35 @@ func main() {
 		io.Copy(w, resp.Body)
 	})
 
+	// AUDIT: new read-only endpoint to query audit logs
+	mux.HandleFunc("/audit-logs", adminAuth(adminSecret, db, func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodGet {
+			writeErr(w, http.StatusMethodNotAllowed, "method not allowed")
+			return
+		}
+
+		limit := 50
+		offset := 0
+		if l := r.URL.Query().Get("limit"); l != "" {
+			if n, err := strconv.Atoi(l); err == nil && n > 0 {
+				limit = n
+			}
+		}
+		if o := r.URL.Query().Get("offset"); o != "" {
+			if n, err := strconv.Atoi(o); err == nil && n >= 0 {
+				offset = n
+			}
+		}
+
+		logs, err := db.ListAuditLogs(r.Context(), limit, offset)
+		if err != nil {
+			log.Error("audit logs query failed", "err", err)
+			writeErr(w, http.StatusInternalServerError, "database error")
+			return
+		}
+		writeJSON(w, http.StatusOK, logs)
+	}))
+
 	srv := &http.Server{
 		Addr:              ":8081",
 		Handler:           mux,
@@ -501,9 +668,20 @@ func main() {
 		IdleTimeout:       120 * time.Second,
 	}
 
+	tlsCert := os.Getenv("TLS_CERT")
+	tlsKey := os.Getenv("TLS_KEY")
+
 	go func() {
-		log.Info("admin starting", "addr", srv.Addr)
-		srv.ListenAndServe()
+		log.Info("admin starting", "addr", srv.Addr, "tls", tlsCert != "" && tlsKey != "")
+		var err error
+		if tlsCert != "" && tlsKey != "" {
+			err = srv.ListenAndServeTLS(tlsCert, tlsKey)
+		} else {
+			err = srv.ListenAndServe()
+		}
+		if err != nil && err != http.ErrServerClosed {
+			log.Error("server failed", "err", err)
+		}
 	}()
 
 	sig := make(chan os.Signal, 1)

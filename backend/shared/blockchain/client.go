@@ -123,7 +123,6 @@ func (c *Client) runHealthCheck(ctx context.Context) {
 			start := time.Now()
 			req, _ := http.NewRequestWithContext(ctx, "POST", url, bytes.NewReader(reqBody))
 			req.Header.Set("Content-Type", "application/json")
-			// FIX: Add User-Agent to prevent WAF/Cloudflare blocks on public RPCs
 			req.Header.Set("User-Agent", "BlockMesh-Gateway/1.0")
 
 			resp, err := c.http.Do(req)
@@ -157,9 +156,47 @@ func (c *Client) runHealthCheck(ctx context.Context) {
 				return
 			}
 
-			// Drain body so the connection can be reused.
-			io.Copy(io.Discard, resp.Body)
+			// FIX: Reject non-2xx status codes
+			if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+				io.Copy(io.Discard, resp.Body)
+				resp.Body.Close()
+				h.ConsecutiveFails++
+				if h.ConsecutiveFails >= 3 {
+					h.Healthy = false
+				}
+				healthy := h.Healthy
+				c.healthMu.Unlock()
+				metrics.NodeHealthy.WithLabelValues(c.networkID, url).Set(boolToFloat(healthy))
+				c.log.Warn(
+					"health check bad status",
+					"network_id", c.networkID,
+					"endpoint", url,
+					"status", resp.StatusCode,
+				)
+				return
+			}
+
+			body, _ := io.ReadAll(resp.Body)
 			resp.Body.Close()
+
+			// FIX: Validate JSON-RPC body before marking healthy
+			var rpcResp RPCResponse
+			if err := json.Unmarshal(body, &rpcResp); err != nil || rpcResp.Error != nil {
+				h.ConsecutiveFails++
+				if h.ConsecutiveFails >= 3 {
+					h.Healthy = false
+				}
+				healthy := h.Healthy
+				c.healthMu.Unlock()
+				metrics.NodeHealthy.WithLabelValues(c.networkID, url).Set(boolToFloat(healthy))
+				c.log.Warn(
+					"health check invalid rpc",
+					"network_id", c.networkID,
+					"endpoint", url,
+					"err", err,
+				)
+				return
+			}
 
 			h.ConsecutiveFails = 0
 			h.Healthy = true
@@ -190,7 +227,6 @@ func (c *Client) Call(ctx context.Context, method string, params ...any) (json.R
 		start := time.Now()
 		req, _ := http.NewRequestWithContext(ctx, "POST", ep, bytes.NewReader(reqBody))
 		req.Header.Set("Content-Type", "application/json")
-		// FIX: Add User-Agent to prevent WAF/Cloudflare blocks on public RPCs
 		req.Header.Set("User-Agent", "BlockMesh-Gateway/1.0")
 
 		if requestID != "" {

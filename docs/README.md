@@ -1,26 +1,27 @@
-# BlockMesh Documentation
+# ChainMesh Documentation
 
-Welcome to the BlockMesh documentation. This is your starting point for understanding, deploying, and operating the BlockMesh blockchain API gateway.
+Welcome to the ChainMesh documentation. This is your starting point for understanding, deploying, and operating the ChainMesh blockchain API gateway.
 
 ---
 
-## What is BlockMesh?
+## What is ChainMesh?
 
-BlockMesh is a production-grade, self-hosted API gateway that sits between your applications and blockchain RPC nodes. It provides intelligent routing, Redis caching, per-tenant rate limiting, usage metering, and a role-based web dashboard.
+ChainMesh is a production-grade, self-hosted API gateway that sits between your applications and blockchain RPC nodes. It provides intelligent routing, Redis caching, per-tenant rate limiting, usage metering, and a role-based web dashboard.
 
 **Key capabilities:**
 - **Health-aware smart routing** — automatic failover between multiple RPC endpoints
 - **Multi-network support** — manage Ethereum, Sepolia, Polygon, and other networks
-- **Secure multi-tenancy** — SHA-256 hashed API keys, key rotation, constant-time auth
+- **Secure multi-tenancy** — bcrypt hashed API keys, key rotation, constant-time auth
 - **Domain-aware caching** — method-specific TTLs (e.g., `eth_chainId` for 24h)
 - **Granular rate limiting** — per-tenant RPS, RPM, and daily quotas via Redis
 - **Async telemetry** — non-blocking usage recording with pre-aggregated stats views
+- **Audit logging** — admin actions and authentication failures recorded to PostgreSQL
 
 ---
 
 ## Documentation Structure
 
-### For Operators (Running BlockMesh)
+### For Operators (Running ChainMesh)
 | Document | Description |
 |----------|-------------|
 | [Architecture Overview](architecture/overview.md) | System components, tech stack, and design principles |
@@ -30,12 +31,12 @@ BlockMesh is a production-grade, self-hosted API gateway that sits between your 
 | [How to Add Networks](../docs/HowToAddNetworks.md) | Configure blockchain networks via UI or API |
 | [How to Add Tenants](../docs/HowToAddTenants.md) | Create and manage API tenants |
 
-### For API Consumers (Using BlockMesh)
+### For API Consumers (Using ChainMesh)
 | Document | Description |
 |----------|-------------|
 | [How to Use](../docs/HowToUse.md) | Get an API key, make RPC calls, check usage |
 
-### For Administrators (Managing BlockMesh)
+### For Administrators (Managing ChainMesh)
 | Document | Description |
 |----------|-------------|
 | [How to Add Networks](../docs/HowToAddNetworks.md) | Configure and test blockchain endpoints |
@@ -64,7 +65,7 @@ BlockMesh is a production-grade, self-hosted API gateway that sits between your 
 
 ## API Reference
 
-The BlockMesh Admin API is documented via OpenAPI 3.0. See [`backend/api/openapi.yaml`](../../backend/api/openapi.yaml) for the raw specification.
+The ChainMesh Admin API is documented via OpenAPI 3.0. See [`backend/api/openapi.yaml`](../../backend/api/openapi.yaml) for the raw specification.
 
 ---
 

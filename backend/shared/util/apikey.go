@@ -2,10 +2,11 @@ package util
 
 import (
 	"crypto/rand"
-	"crypto/sha256"
 	"crypto/subtle"
 	"encoding/hex"
 	"fmt"
+
+	"golang.org/x/crypto/bcrypt"
 )
 
 // GenerateAPIKey creates a secure random API key with a readable prefix.
@@ -26,11 +27,19 @@ func GenerateRequestID() string {
 	return hex.EncodeToString(b)
 }
 
-// HashAPIKey hashes an API key for safe storage.
+// HashAPIKey hashes an API key using bcrypt.
 // API keys should never be stored in plaintext.
 func HashAPIKey(key string) string {
-	sum := sha256.Sum256([]byte(key))
-	return hex.EncodeToString(sum[:])
+	hash, err := bcrypt.GenerateFromPassword([]byte(key), bcrypt.DefaultCost)
+	if err != nil {
+		panic(err)
+	}
+	return string(hash)
+}
+
+// VerifyAPIKey checks a plaintext API key against a bcrypt hash.
+func VerifyAPIKey(key, hash string) bool {
+	return bcrypt.CompareHashAndPassword([]byte(hash), []byte(key)) == nil
 }
 
 // APIKeyPrefix returns a short visible prefix for display purposes.

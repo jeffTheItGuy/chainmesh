@@ -1,6 +1,6 @@
 # Data Flow
 
-This document traces how requests, configuration, and data move through BlockMesh — from an incoming RPC call to a persisted usage record.
+This document traces how requests, configuration, and data move through ChainMesh — from an incoming RPC call to a persisted usage record.
 
 ---
 
@@ -37,10 +37,12 @@ X-Request-ID: <generated-or-provided>
 
 #### 1.3 Auth Middleware (`middleware/auth.go`)
 - Validates `Authorization: Bearer <key>` format
-- Hashes the provided key via `SHA-256`
-- Looks up hash in `api_keys` table (with `last_used_at` update)
+- Extracts the 12-character prefix from the provided key
+- Queries `api_keys` for rows matching that prefix with `revoked_at IS NULL`
+- For each candidate row, verifies the full key against the stored `bcrypt` hash
+- On match: updates `last_used_at`, injects `*model.Tenant` into context
 - Returns `401` if key missing, revoked, or not found
-- Injects `*model.Tenant` into context (includes quotas, network ID, plan)
+- Injected tenant includes quotas, network ID, and plan
 
 #### 1.4 Rate Limit Middleware (`middleware/ratelimit.go`)
 - Extracts tenant from context
@@ -83,7 +85,7 @@ X-Request-ID: <generated-or-provided>
 - Client selects endpoint via `endpointsForCall()`:
   1. Healthy endpoints sorted by latency (ascending)
   2. Unhealthy endpoints as last-resort fallback
-- Sends `POST` with `User-Agent: BlockMesh-Gateway/1.0`
+- Sends `POST` with `User-Agent: ChainMesh-Gateway/1.0`
 - Retries next endpoint on transport or parse errors
 - Returns `502` if all endpoints fail
 
@@ -95,9 +97,9 @@ X-Request-ID: <generated-or-provided>
 **Telemetry Recording:**
 - Calculates latency from request start
 - Records Prometheus metrics:
-  - `blockmesh_gateway_requests_total` (counter, by network/method/status/cache)
-  - `blockmesh_gateway_request_duration_seconds` (histogram)
-  - `blockmesh_gateway_cache_hits_total` / `cache_misses_total`
+  - `chainmesh_gateway_requests_total` (counter, by network/method/status/cache)
+  - `chainmesh_gateway_request_duration_seconds` (histogram)
+  - `chainmesh_gateway_cache_hits_total` / `cache_misses_total`
 - Enqueues async job to Telemetry Recorder:
   - `Usage`: tenant ID, method, count=1, bytes_in, period (truncated to minute)
   - `RequestLog`: tenant ID, network ID, method, status, latency_ms, cache_hit, bytes_in, request_id
@@ -171,7 +173,7 @@ Every 10s ──▶ runHealthCheck() ──▶ POST eth_chainId to each endpoint
 ```
 
 - Concurrent probes across all endpoints
-- `User-Agent: BlockMesh-Gateway/1.0` header (prevents WAF blocks)
+- `User-Agent: ChainMesh-Gateway/1.0` header (prevents WAF blocks)
 - Drains response body for connection reuse
 - Updates Prometheus `NodeHealthy` gauge
 - Endpoint marked unhealthy after **3 consecutive failures**
@@ -234,11 +236,15 @@ Request ──▶ adminAuth() ──▶ X-Admin-Secret header
                                 No
                                 │
                                 ▼
+                        RecordAuditLog() ──▶ audit_logs table
+                                │
+                                ▼
                         Return 403 Forbidden
 ```
 
-- All admin endpoints (except `/health`) require the secret
+- All admin endpoints (except `/health` and `/blocks`) require the secret
 - Admin API exits on startup if `ADMIN_SECRET` is unset
+- Failed attempts are logged to `audit_logs` with client IP and User-Agent
 
 ### Tenant Creation Flow
 
@@ -250,7 +256,8 @@ POST /tenants
 ├── GenerateAPIKey(): bm_live_<32-char-hex>
 ├── Transaction:
 │   ├── INSERT tenant
-│   └── INSERT api_keys (hash, prefix)
+│   └── INSERT api_keys (bcrypt hash, prefix)
+├── auditLog(): CREATE_TENANT ──▶ audit_logs table
 └── Return: tenant + plaintext api_key (shown ONCE)
 ```
 
@@ -265,6 +272,28 @@ GET /stats/summary?range=1h
 ├── Else:
 │   └── Query request_logs directly (accurate for recent data)
 └── Return: totals, latency (avg/p95), top methods/networks/statuses, time series
+```
+
+### Audit Log Query Flow
+
+```
+GET /audit-logs?limit=50&offset=0
+├── Validate admin auth
+├── Parse limit (max 1000) and offset
+├── Query audit_logs ORDER BY created_at DESC
+└── Return: array of audit events
+```
+
+### Blockchain Config Creation Flow
+
+```
+POST /blockchain
+├── Validate admin auth
+├── Validate: name and rpc_endpoint_1 required
+├── SSRF check: ValidateRPCEndpoint() rejects loopback/private/link-local IPs
+├── SaveBlockchainConfig()
+├── auditLog(): CREATE_BLOCKCHAIN_CONFIG ──▶ audit_logs table
+└── Return: created config
 ```
 
 ---
