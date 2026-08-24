@@ -1,4 +1,4 @@
-module github.com/yourname/blockmesh
+module github.com/jeffTheItGuy/chainmesh
 
 go 1.25.0
 

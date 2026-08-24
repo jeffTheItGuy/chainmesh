@@ -5,8 +5,8 @@ import (
 	"net/http"
 	"strings"
 
-	"github.com/yourname/blockmesh/shared/model"
-	"github.com/yourname/blockmesh/shared/storage/postgres"
+	"github.com/jeffTheItGuy/chainmesh/shared/model"
+	"github.com/jeffTheItGuy/chainmesh/shared/storage/postgres"
 )
 
 type tenantKey struct{}

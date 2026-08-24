@@ -2,7 +2,7 @@ package postgres
 
 import (
 	"context"
-	"github.com/yourname/blockmesh/shared/model"
+	"github.com/jeffTheItGuy/chainmesh/shared/model"
 )
 
 func (d *DB) ListBlockchainConfigs(ctx context.Context) ([]model.BlockchainConfig, error) {

@@ -2,8 +2,8 @@ package postgres
 
 import (
 	"context"
+	"github.com/jeffTheItGuy/chainmesh/shared/model"
 	"time"
-	"github.com/yourname/blockmesh/shared/model"
 )
 
 func (d *DB) RecordUsage(ctx context.Context, u *model.Usage) error {

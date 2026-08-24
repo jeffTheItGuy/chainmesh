@@ -2,16 +2,14 @@ package telemetry
 
 import (
 	"context"
-	"fmt"
 	"log/slog"
 	"os"
-	"strconv"
 	"sync"
 	"time"
 
-	"github.com/yourname/blockmesh/shared/metrics"
-	"github.com/yourname/blockmesh/shared/model"
-	"github.com/yourname/blockmesh/shared/storage/postgres"
+	"github.com/jeffTheItGuy/chainmesh/shared/metrics"
+	"github.com/jeffTheItGuy/chainmesh/shared/model"
+	"github.com/jeffTheItGuy/chainmesh/shared/storage/postgres"
 )
 
 type kind string

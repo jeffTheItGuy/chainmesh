@@ -3,7 +3,7 @@ package postgres
 import (
 	"context"
 
-	"github.com/yourname/blockmesh/shared/model"
+	"github.com/jeffTheItGuy/chainmesh/shared/model"
 )
 
 func (d *DB) RecordAuditLog(ctx context.Context, log *model.AuditLog) error {
@@ -46,7 +46,7 @@ func (d *DB) ListAuditLogs(ctx context.Context, limit, offset int) ([]model.Audi
 
 	rows, err := d.pool.Query(ctx,
 		`
-		SELECT id, actor, action, resource_type, resource_id, details, ip_address, user_agent, created_at
+		SELECT id, actor, action, resource_type, resource_id, details, ip_address::text, user_agent, created_at
 		FROM audit_logs
 		ORDER BY created_at DESC
 		LIMIT $1 OFFSET $2

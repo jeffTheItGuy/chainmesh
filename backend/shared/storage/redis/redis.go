@@ -3,8 +3,6 @@ package redis
 import (
 	"context"
 	"fmt"
-	"os"
-	"strconv"
 	"time"
 
 	goredis "github.com/redis/go-redis/v9"

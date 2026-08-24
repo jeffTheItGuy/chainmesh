@@ -13,11 +13,11 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/yourname/blockmesh/shared/blockchain"
-	"github.com/yourname/blockmesh/shared/logger"
-	"github.com/yourname/blockmesh/shared/model"
-	"github.com/yourname/blockmesh/shared/storage/postgres"
-	"github.com/yourname/blockmesh/shared/util"
+	"github.com/jeffTheItGuy/chainmesh/shared/blockchain"
+	"github.com/jeffTheItGuy/chainmesh/shared/logger"
+	"github.com/jeffTheItGuy/chainmesh/shared/model"
+	"github.com/jeffTheItGuy/chainmesh/shared/storage/postgres"
+	"github.com/jeffTheItGuy/chainmesh/shared/util"
 )
 
 const maxAdminBodyBytes = 1 << 20 // 1 MB
@@ -525,7 +525,7 @@ func main() {
 
 			// AUDIT: blockchain config created
 			auditLog(db, r, "CREATE_BLOCKCHAIN_CONFIG", "blockchain_config", saved.ID, map[string]any{
-				"name":    saved.Name,
+				"name":     saved.Name,
 				"chain_id": saved.ChainID,
 			})
 
@@ -592,7 +592,7 @@ func main() {
 
 			// AUDIT: blockchain config updated
 			auditLog(db, r, "UPDATE_BLOCKCHAIN_CONFIG", "blockchain_config", id, map[string]any{
-				"name":    req.Name,
+				"name":     req.Name,
 				"chain_id": req.ChainID,
 			})
 

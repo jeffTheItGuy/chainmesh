@@ -1,4 +1,8 @@
-.PHONY: build-gateway build-admin build-ingestor build-web test lint migrate up up-dev install
+.PHONY: build-gateway build-admin build-ingestor build-web build-all \
+        test test-unit test-integration test-docker test-infra-up test-infra-down test-down \
+        lint migrate up up-dev install clean-test-results
+
+# ─── Builds (unchanged) ─────────────────────────────────────────────────────
 
 build-gateway:
 	docker build -f backend/gateway/Dockerfile -t blockmesh-gateway:latest ./backend
@@ -14,14 +18,53 @@ build-web:
 
 build-all: build-gateway build-admin build-ingestor build-web
 
-test:
-	cd backend && go test -race ./...
+# ─── Testing ────────────────────────────────────────────────────────────────
+
+# Fast unit tests — no Docker, no database, no external deps.
+test-unit:
+	cd backend && go test -race ./shared/util/... ./shared/blockchain/... ./gateway/middleware/...
+
+# Integration tests — requires a running Postgres.
+test-integration:
+ifndef TEST_DATABASE_URL
+	$(error TEST_DATABASE_URL is not set. Start test infra with 'make test-infra-up', then run this again)
+endif
+	cd backend && TEST_DATABASE_URL=$(TEST_DATABASE_URL) go test -race ./admin/... ./shared/storage/postgres/... ./gateway/proxy/... ./shared/telemetry/...
+
+# Safe default: 'make test' now only runs unit tests.
+test: test-unit
+
+# Full test suite inside Docker with artifacts.
+# Writes logs, JSON, and coverage to test-results/
+test-docker:
+	@mkdir -p test-results
+	docker compose -f docker-compose.test.yml up --build --abort-on-container-exit test-runner
+	@echo "✅ Results in test-results/"
+
+# Start only the test databases (Postgres on :5433, Redis on :6380).
+test-infra-up:
+	docker compose -f docker-compose.test.yml up -d postgres-test redis-test
+	@echo "Postgres ready at: postgres://test:test@localhost:5433/test?sslmode=disable"
+	@echo "Redis ready at:    localhost:6380"
+
+# Stop test databases and wipe their volumes.
+test-infra-down:
+	docker compose -f docker-compose.test.yml down -v
+
+# Alias for test-infra-down
+test-down: test-infra-down
+
+# Remove locally generated test artifacts
+clean-test-results:
+	rm -rf test-results
+
+# ─── Existing targets (unchanged) ───────────────────────────────────────────
 
 lint:
 	cd backend && golangci-lint run
 
 migrate:
-	psql $(DATABASE_URL) -f migrations/001_init.up.sql
+	psql $(DATABASE_URL) -f backend/database/migrations/001_init.up.sql
 
 up:
 	docker compose up --build

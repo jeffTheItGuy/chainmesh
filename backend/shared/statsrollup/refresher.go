@@ -6,7 +6,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/yourname/blockmesh/shared/storage/postgres"
+	"github.com/jeffTheItGuy/chainmesh/shared/storage/postgres"
 )
 
 // Refresher periodically refreshes the stats materialized view.

@@ -1,0 +1,54 @@
+services:
+  postgres-test:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: test
+      POSTGRES_PASSWORD: test
+      POSTGRES_DB: test
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U test -d test"]
+      interval: 2s
+      timeout: 5s
+      retries: 5
+    networks:
+      - blockmesh-test
+
+  redis-test:
+    image: redis:7-alpine
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 2s
+      timeout: 5s
+      retries: 5
+    networks:
+      - blockmesh-test
+
+  test-runner:
+    build:
+      context: .
+      dockerfile: .docker/test/test.Dockerfile
+    depends_on:
+      postgres-test:
+        condition: service_healthy
+      redis-test:
+        condition: service_healthy
+    volumes:
+      - ./backend:/app:cached
+      - ./test-results:/app/test-results
+      - go-mod-cache:/go/pkg/mod
+    environment:
+      TEST_DATABASE_URL: postgres://test:test@postgres-test:5432/test?sslmode=disable
+      TEST_REDIS_ADDR: redis-test:6379
+      CGO_ENABLED: 0
+    working_dir: /app
+    command: ["/run-tests.sh"]
+    networks:
+      - blockmesh-test
+
+volumes:
+  go-mod-cache:
+
+# ─── FIX: declare the network so Compose can create it ───────────────────────
+networks:
+  blockmesh-test:
+    driver: bridge

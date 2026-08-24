@@ -3,7 +3,7 @@ package postgres
 import (
 	"context"
 
-	"github.com/yourname/blockmesh/shared/model"
+	"github.com/jeffTheItGuy/chainmesh/shared/model"
 )
 
 func (d *DB) StoreBlock(ctx context.Context, b *model.Block) error {

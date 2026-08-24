@@ -3,8 +3,8 @@ package middleware
 import (
 	"net/http"
 
-	"github.com/yourname/blockmesh/shared/requestid"
-	"github.com/yourname/blockmesh/shared/util"
+	"github.com/jeffTheItGuy/chainmesh/shared/requestid"
+	"github.com/jeffTheItGuy/chainmesh/shared/util"
 )
 
 func RequestID(next http.Handler) http.Handler {

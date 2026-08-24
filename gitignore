@@ -69,3 +69,10 @@ pgdata/
 .DS_Store
 .AppleDouble
 .LSOverride
+
+
+# Test artifacts
+**/test-results/
+coverage-summary.txt
+/test-results/
+

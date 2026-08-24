@@ -3,7 +3,7 @@ package postgres
 import (
 	"context"
 
-	"github.com/yourname/blockmesh/shared/model"
+	"github.com/jeffTheItGuy/chainmesh/shared/model"
 )
 
 func (d *DB) RecordRequestLog(ctx context.Context, l *model.RequestLog) error {

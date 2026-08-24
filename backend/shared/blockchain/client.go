@@ -12,9 +12,9 @@ import (
 	"sync"
 	"time"
 
-	"github.com/yourname/blockmesh/shared/logger"
-	"github.com/yourname/blockmesh/shared/metrics"
-	"github.com/yourname/blockmesh/shared/requestid"
+	"github.com/jeffTheItGuy/chainmesh/shared/logger"
+	"github.com/jeffTheItGuy/chainmesh/shared/metrics"
+	"github.com/jeffTheItGuy/chainmesh/shared/requestid"
 )
 
 // EndpointHealth holds real-time health and latency data for a single RPC endpoint.

@@ -4,8 +4,8 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/yourname/blockmesh/shared/model"
-	"github.com/yourname/blockmesh/shared/util"
+	"github.com/jeffTheItGuy/chainmesh/shared/model"
+	"github.com/jeffTheItGuy/chainmesh/shared/util"
 )
 
 func (d *DB) GetTenantByAPIKey(ctx context.Context, key string) (*model.Tenant, error) {

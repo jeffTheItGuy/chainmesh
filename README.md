@@ -3,6 +3,7 @@
 [![Go Version](https://img.shields.io/badge/Go-1.22+-00ADD8?logo=go)](https://golang.org)
 [![React](https://img.shields.io/badge/React-18-61DAFB?logo=react)](https://react.dev)
 [![License](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
+[![Tests](https://github.com/yourname/chainmesh/actions/workflows/test.yml/badge.svg)](https://github.com/yourname/chainmesh/actions)
 
 **Self-hosted, multi-tenant blockchain API gateway.**
 
@@ -52,6 +53,25 @@ kubectl apply -k deployments/base/
 - **Granular rate limiting** — Per-tenant RPS, RPM, and daily quotas enforced via Redis with atomic counters.
 - **Async telemetry** — Non-blocking usage recording to PostgreSQL with pre-aggregated stats views.
 - **Role-based dashboard** — Viewer mode for public chain data; Admin mode for full management.
+
+---
+
+## Testing
+
+```bash
+# Backend (Go)
+cd backend
+go test ./...
+go test -race ./...
+
+# Frontend (React + TypeScript)
+cd frontend
+npm run typecheck
+npm run lint
+npm run test
+```
+
+All contributions must pass the full test suite. See [docs/tests/](docs/tests/) for the complete testing strategy, including integration and post-production validation guides.
 
 ---
 
@@ -152,6 +172,7 @@ Full documentation is available in the `docs/` directory:
 - **Administrators** — Managing tenants, networks, and monitoring
 - **API Consumers** — Authentication, rate limits, and error reference
 - **Developers** — Local setup, contributing guidelines, and architecture
+- **Tests** — Unit, integration, and post-production testing strategy
 
 ---
 

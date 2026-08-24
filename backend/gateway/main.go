@@ -10,13 +10,13 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/yourname/blockmesh/gateway/middleware"
-	"github.com/yourname/blockmesh/gateway/proxy"
-	"github.com/yourname/blockmesh/shared/logger"
-	"github.com/yourname/blockmesh/shared/statsrollup"
-	"github.com/yourname/blockmesh/shared/storage/postgres"
-	"github.com/yourname/blockmesh/shared/storage/redis"
-	"github.com/yourname/blockmesh/shared/telemetry"
+	"github.com/jeffTheItGuy/chainmesh/gateway/middleware"
+	"github.com/jeffTheItGuy/chainmesh/gateway/proxy"
+	"github.com/jeffTheItGuy/chainmesh/shared/logger"
+	"github.com/jeffTheItGuy/chainmesh/shared/statsrollup"
+	"github.com/jeffTheItGuy/chainmesh/shared/storage/postgres"
+	"github.com/jeffTheItGuy/chainmesh/shared/storage/redis"
+	"github.com/jeffTheItGuy/chainmesh/shared/telemetry"
 )
 
 type SafeEndpointHealth struct {

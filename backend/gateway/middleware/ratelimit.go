@@ -4,8 +4,8 @@ import (
 	"net/http"
 	"strconv"
 
-	"github.com/yourname/blockmesh/shared/metrics"
-	"github.com/yourname/blockmesh/shared/storage/redis"
+	"github.com/jeffTheItGuy/chainmesh/shared/metrics"
+	"github.com/jeffTheItGuy/chainmesh/shared/storage/redis"
 )
 
 func RateLimit(cache *redis.Client) func(http.Handler) http.Handler {
