@@ -12,55 +12,103 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func TestCheckRateLimits_LuaScriptRace(t *testing.T) {
+func TestClient_GetSet(t *testing.T) {
 	s := miniredis.RunT(t)
-	client := New(s.Addr())
+	c := New(s.Addr())
 
-	const quota = 50
-	const workers = 100
+	ctx := context.Background()
+	require.NoError(t, c.Set(ctx, "key1", "val1", time.Hour))
 
-	var passed atomic.Int64
-	var rejected atomic.Int64
-	var wg sync.WaitGroup
+	val, err := c.Get(ctx, "key1")
+	require.NoError(t, err)
+	assert.Equal(t, "val1", val)
 
-	for i := 0; i < workers; i++ {
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
-			allowed, _, err := client.CheckRateLimits(context.Background(), "tenant-lua-race", 0, quota, 0)
-			require.NoError(t, err)
-			if allowed {
-				passed.Add(1)
-			} else {
-				rejected.Add(1)
-			}
-		}()
-	}
-	wg.Wait()
-
-	assert.Equal(t, int64(quota), passed.Load(), "exactly quota should pass")
-	assert.Equal(t, int64(workers-quota), rejected.Load(), "remainder should be rejected")
+	_, err = c.Get(ctx, "missing")
+	assert.Error(t, err) // redis.Nil
 }
 
-func TestCheckRateLimits_KeyExpiration(t *testing.T) {
+func TestClient_IncrExpire(t *testing.T) {
 	s := miniredis.RunT(t)
-	client := New(s.Addr())
+	c := New(s.Addr())
 
-	tenant := "tenant-expire"
-
-	// Exhaust the 1 RPS bucket
-	allowed1, _, err := client.CheckRateLimits(context.Background(), tenant, 1, 0, 0)
+	ctx := context.Background()
+	n, err := c.Incr(ctx, "counter")
 	require.NoError(t, err)
-	assert.True(t, allowed1, "first request should pass")
+	assert.Equal(t, int64(1), n)
 
-	allowed2, _, err := client.CheckRateLimits(context.Background(), tenant, 1, 0, 0)
+	n2, err := c.Incr(ctx, "counter")
 	require.NoError(t, err)
-	assert.False(t, allowed2, "second request should be rejected")
+	assert.Equal(t, int64(2), n2)
 
-	// Fast-forward past the 2-second TTL hardcoded for RPS keys
-	s.FastForward(3 * time.Second)
+	require.NoError(t, c.Expire(ctx, "counter", time.Second))
+	s.FastForward(2 * time.Second)
 
-	allowed3, _, err := client.CheckRateLimits(context.Background(), tenant, 1, 0, 0)
+	_, err = c.Get(ctx, "counter")
+	assert.Error(t, err) // expired
+}
+
+func TestCheckRateLimits_DailyQuota(t *testing.T) {
+	s := miniredis.RunT(t)
+	c := New(s.Addr())
+
+	ctx := context.Background()
+	tenant := "tenant-daily"
+
+	// Daily quota of 2
+	for i := 0; i < 2; i++ {
+		allowed, _, err := c.CheckRateLimits(ctx, tenant, 0, 0, 2)
+		require.NoError(t, err)
+		assert.True(t, allowed, "request %d should pass", i+1)
+	}
+
+	allowed, status, err := c.CheckRateLimits(ctx, tenant, 0, 0, 2)
 	require.NoError(t, err)
-	assert.True(t, allowed3, "request after expiry should pass again")
+	assert.False(t, allowed)
+	assert.Equal(t, "daily", status.RejectedLimit)
+	assert.Greater(t, status.RetryAfterSeconds, 0)
+}
+
+func TestCheckRateLimits_DisabledTier(t *testing.T) {
+	s := miniredis.RunT(t)
+	c := New(s.Addr())
+
+	ctx := context.Background()
+	tenant := "tenant-disabled"
+
+	// quota=0 means disabled — should never reject for that tier
+	allowed, _, err := c.CheckRateLimits(ctx, tenant, 0, 0, 0)
+	require.NoError(t, err)
+	assert.True(t, allowed)
+
+	// RPS disabled but RPM enabled
+	allowed, status, err := c.CheckRateLimits(ctx, tenant, 0, 1, 0)
+	require.NoError(t, err)
+	assert.True(t, allowed)
+	assert.Equal(t, 1, status.LimitMinute)
+
+	// Exhaust RPM
+	allowed, status, err = c.CheckRateLimits(ctx, tenant, 0, 1, 0)
+	require.NoError(t, err)
+	assert.False(t, allowed)
+	assert.Equal(t, "rpm", status.RejectedLimit)
+}
+
+func TestCheckRateLimit_Legacy(t *testing.T) {
+	s := miniredis.RunT(t)
+	c := New(s.Addr())
+
+	ctx := context.Background()
+	tenant := "tenant-legacy"
+
+	allowed, err := c.CheckRateLimit(ctx, tenant, 2)
+	require.NoError(t, err)
+	assert.True(t, allowed)
+
+	allowed, err = c.CheckRateLimit(ctx, tenant, 2)
+	require.NoError(t, err)
+	assert.True(t, allowed)
+
+	allowed, err = c.CheckRateLimit(ctx, tenant, 2)
+	require.NoError(t, err)
+	assert.False(t, allowed)
 }

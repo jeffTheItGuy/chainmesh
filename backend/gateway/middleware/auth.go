@@ -11,12 +11,18 @@ import (
 
 type tenantKey struct{}
 
+// tenantResolver is the subset of postgres.DB required by Auth.
+// Using an interface lets us unit-test middleware without a real database.
+type tenantResolver interface {
+	GetTenantByAPIKey(ctx context.Context, key string) (*model.Tenant, error)
+}
+
 func TenantFromContext(ctx context.Context) *model.Tenant {
 	t, _ := ctx.Value(tenantKey{}).(*model.Tenant)
 	return t
 }
 
-func Auth(db *postgres.DB) func(http.Handler) http.Handler {
+func Auth(db tenantResolver) func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			auth := r.Header.Get("Authorization")

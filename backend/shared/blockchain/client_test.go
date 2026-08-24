@@ -5,11 +5,13 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"sync"
 	"testing"
 	"time"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"github.com/jeffTheItGuy/chainmesh/shared/requestid"
 )
 
 func TestEndpointsForCall_OrdersByLatencyAndHealth(t *testing.T) {
@@ -111,4 +113,106 @@ func TestCall_AllEndpointsFail(t *testing.T) {
 	_, err := c.Call(context.Background(), "eth_chainId")
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "all endpoints failed")
+}
+
+// ---------------------------------------------------------------------------
+// New coverage tests
+// ---------------------------------------------------------------------------
+
+func TestClient_HealthCheckLifecycle(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		json.NewEncoder(w).Encode(RPCResponse{
+			JSONRPC: "2.0",
+			Result:  json.RawMessage(`"0x1"`),
+			ID:      1,
+		})
+	}))
+	defer srv.Close()
+
+	c := New([]string{srv.URL})
+	ctx, cancel := context.WithCancel(context.Background())
+	c.StartHealthChecks(ctx, 100*time.Millisecond)
+	time.Sleep(150 * time.Millisecond)
+
+	health := c.HealthyEndpoints()
+	require.Len(t, health, 1)
+	assert.True(t, health[0].Healthy)
+
+	cancel()
+	c.StopHealthChecks()
+}
+
+func TestClient_HealthCheckNon2xx(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusInternalServerError)
+	}))
+	defer srv.Close()
+
+	c := New([]string{srv.URL})
+	c.StartHealthChecks(context.Background(), 50*time.Millisecond)
+	defer c.StopHealthChecks()
+
+	time.Sleep(200 * time.Millisecond)
+
+	health := c.HealthyEndpoints()
+	require.Len(t, health, 1)
+	assert.False(t, health[0].Healthy)
+}
+
+func TestClient_HealthCheckInvalidJSONRPC(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Write([]byte(`not json`))
+	}))
+	defer srv.Close()
+
+	c := New([]string{srv.URL})
+	c.StartHealthChecks(context.Background(), 50*time.Millisecond)
+	defer c.StopHealthChecks()
+
+	time.Sleep(200 * time.Millisecond)
+
+	health := c.HealthyEndpoints()
+	require.Len(t, health, 1)
+	assert.False(t, health[0].Healthy)
+}
+
+func TestClient_Call_RequestIDPropagation(t *testing.T) {
+	var receivedRequestID string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		receivedRequestID = r.Header.Get("X-Request-ID")
+		json.NewEncoder(w).Encode(RPCResponse{
+			JSONRPC: "2.0",
+			Result:  json.RawMessage(`"0x1"`),
+			ID:      1,
+		})
+	}))
+	defer srv.Close()
+
+	c := New([]string{srv.URL})
+	ctx := requestid.NewContext(context.Background(), "trace-123")
+	_, err := c.Call(ctx, "eth_chainId")
+	require.NoError(t, err)
+	assert.Equal(t, "trace-123", receivedRequestID)
+}
+
+func TestClient_ConcurrentMarkFailureSuccess(t *testing.T) {
+	c := New([]string{"http://node"})
+
+	var wg sync.WaitGroup
+	for i := 0; i < 100; i++ {
+		wg.Add(2)
+		go func() {
+			defer wg.Done()
+			c.markSuccess("http://node", 10*time.Millisecond)
+		}()
+		go func() {
+			defer wg.Done()
+			c.markFailure("http://node")
+		}()
+	}
+	wg.Wait()
+
+	// After mixed concurrent calls, health state should be valid (no panic, no data race)
+	health := c.HealthyEndpoints()
+	require.Len(t, health, 1)
 }
