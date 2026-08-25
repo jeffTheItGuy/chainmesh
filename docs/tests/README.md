@@ -56,7 +56,7 @@ npm run typecheck
 # Linting
 npm run lint
 
-# Unit tests
+# Unit tests (high-value targets only — see unit-testing.md)
 npm run test
 
 # Production build verification
@@ -81,7 +81,7 @@ The GitHub Actions workflow (`.github/workflows/test.yml`) runs:
 | Directory | Contents |
 |-----------|----------|
 | `backend/*/*_test.go` | Go unit tests (co-located with source) |
-| `frontend/src/*.test.tsx` | React component and hook tests |
+| `frontend/src/*.test.tsx` | React component and hook tests (high-ROI only) |
 | `tests/e2e/` | End-to-end API tests (run against running stack) |
 
 ---

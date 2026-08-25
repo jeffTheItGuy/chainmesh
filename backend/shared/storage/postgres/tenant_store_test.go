@@ -11,6 +11,7 @@ import (
 	"github.com/ory/dockertest/v3/docker"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+
 	"github.com/jeffTheItGuy/chainmesh/shared/util"
 )
 
@@ -54,7 +55,6 @@ func setupTestDB(t *testing.T) *DB {
 		t.Cleanup(db.Close)
 	}
 
-	// Ensure schema exists regardless of whether we use an external DB or a fresh container.
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 
@@ -106,13 +106,22 @@ func TestCreateTenantWithKey(t *testing.T) {
 func TestRotateAPIKey(t *testing.T) {
 	db := setupTestDB(t)
 	ctx := context.Background()
+
+	// Generate a unique name to avoid collisions
+	uniqueName := fmt.Sprintf("RotateMe_%d", time.Now().UnixNano())
+
+	// Clean up any leftover from previous runs (though the name is unique)
+	_, err := db.pool.Exec(ctx, `DELETE FROM tenants WHERE name = $1`, uniqueName)
+	require.NoError(t, err)
+
 	oldKey := util.GenerateAPIKey()
 	newKey := util.GenerateAPIKey()
 
-	tenant, err := db.CreateTenantWithKey(ctx, "RotateMe", "", 60, 5, 500, "free", oldKey)
+	tenant, err := db.CreateTenantWithKey(ctx, uniqueName, "", 60, 5, 500, "free", oldKey)
 	require.NoError(t, err)
 
-	require.NoError(t, db.RotateAPIKey(ctx, tenant.ID, newKey))
+	err = db.RotateAPIKey(ctx, tenant.ID, newKey)
+	require.NoError(t, err)
 
 	_, err = db.GetTenantByAPIKey(ctx, oldKey)
 	assert.Error(t, err, "old key should be revoked")
@@ -120,6 +129,9 @@ func TestRotateAPIKey(t *testing.T) {
 	fetched, err := db.GetTenantByAPIKey(ctx, newKey)
 	require.NoError(t, err)
 	assert.Equal(t, tenant.ID, fetched.ID)
+
+	// Clean up after test
+	_, _ = db.pool.Exec(ctx, `DELETE FROM tenants WHERE id = $1`, tenant.ID)
 }
 
 func TestGetTenantByAPIKey_WrongKeyRejected(t *testing.T) {

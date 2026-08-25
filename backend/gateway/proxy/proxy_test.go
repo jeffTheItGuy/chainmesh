@@ -184,6 +184,14 @@ func TestProxy_MalformedRequestsDoNotPanic(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			// For the valid_no_network case, ensure absolutely no blockchain configs exist
+			if tt.name == "valid_no_network" {
+				ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+				defer cancel()
+				_, err := db.Pool().Exec(ctx, `DELETE FROM blockchain_configs`)
+				require.NoError(t, err)
+			}
+
 			defer func() {
 				if r := recover(); r != nil {
 					t.Fatalf("panic recovered: %v\n%s", r, debug.Stack())
@@ -192,11 +200,11 @@ func TestProxy_MalformedRequestsDoNotPanic(t *testing.T) {
 
 			req := httptest.NewRequest("POST", "/v1/", bytes.NewBufferString(tt.body))
 			req.Header.Set("Authorization", "Bearer "+apiKey)
-			rec := httptest.NewRecorder()
-			handler.ServeHTTP(rec, req)
+			recorder := httptest.NewRecorder()
+			handler.ServeHTTP(recorder, req)
 
-			assert.Equal(t, tt.wantStatus, rec.Code, "body: %s", rec.Body.String())
-			assert.Contains(t, rec.Body.String(), tt.wantInBody)
+			assert.Equal(t, tt.wantStatus, recorder.Code, "body: %s", recorder.Body.String())
+			assert.Contains(t, recorder.Body.String(), tt.wantInBody)
 		})
 	}
 }

@@ -45,10 +45,25 @@ services:
     networks:
       - blockmesh-test
 
+  web-test:
+    image: node:20-slim
+    volumes:
+      - ./web:/app:cached
+      - ./test-results:/app/test-results
+      - web-node-modules:/app/node_modules
+      - ./.docker/test/web-tests.sh:/run-web-tests.sh:ro
+    working_dir: /app
+    environment:
+      CI: true
+      NODE_ENV: test
+    command: ["/bin/sh", "/run-web-tests.sh"]
+    networks:
+      - blockmesh-test
+
 volumes:
   go-mod-cache:
+  web-node-modules:
 
-# ─── FIX: declare the network so Compose can create it ───────────────────────
 networks:
   blockmesh-test:
     driver: bridge

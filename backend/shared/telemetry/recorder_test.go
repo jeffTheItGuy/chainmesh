@@ -96,7 +96,6 @@ CREATE TABLE IF NOT EXISTS usage (
 `)
 	require.NoError(t, err)
 
-	// Seed tenants for all test tenant IDs to satisfy FK constraints
 	tenantIDs := []string{
 		"550e8400-e29b-41d4-a716-446655440001",
 		"550e8400-e29b-41d4-a716-446655440002",
@@ -145,7 +144,6 @@ func TestRecorder_StopIdempotency(t *testing.T) {
 	recorder.Stop()
 	recorder.Stop()
 
-	// Should not panic
 	recorder.RecordUsage(&model.Usage{
 		TenantID: "550e8400-e29b-41d4-a716-446655440001",
 		Method:   "eth_chainId",
@@ -157,11 +155,14 @@ func TestRecorder_StopIdempotency(t *testing.T) {
 func TestRecorder_RecordUsage_LandsInDB(t *testing.T) {
 	db := setupTelemetryTestDB(t)
 
+	ctx := context.Background()
+	_, err := db.Pool().Exec(ctx, `DELETE FROM usage WHERE tenant_id = $1`, "550e8400-e29b-41d4-a716-446655440002")
+	require.NoError(t, err)
+
 	recorder := New(db, logger.New(), 100)
 	recorder.Start()
 	defer recorder.Stop()
 
-	ctx := context.Background()
 	period := time.Now().Truncate(time.Minute)
 	tenantID := "550e8400-e29b-41d4-a716-446655440002"
 
@@ -173,7 +174,8 @@ func TestRecorder_RecordUsage_LandsInDB(t *testing.T) {
 		Period:   period,
 	})
 
-	time.Sleep(500 * time.Millisecond)
+	// Give the worker enough time to process
+	time.Sleep(2 * time.Second)
 
 	rows, err := db.Pool().Query(ctx,
 		`SELECT method, count, bytes_in FROM usage WHERE tenant_id = $1 AND period = $2`,

@@ -112,12 +112,15 @@ func (m *mockBlockchainClient) Call(ctx context.Context, method string, params [
 
 ## Frontend
 
+The frontend is a thin dashboard over the Admin API. Test the edges and the logic, not the markup.
+
 ### Conventions
 
 - Test files: `ComponentName.test.tsx` alongside the component
-- Use Vitest (configured in `vite.config.ts`) + React Testing Library
+- Use Vitest + React Testing Library
 - Mock API calls with `msw` (Mock Service Worker)
-- Test user interactions, not implementation details
+- Test user interactions and state changes, not implementation details
+- **Do not write snapshot tests** — they create noise without catching real bugs
 
 ### Running Tests
 
@@ -129,35 +132,108 @@ npm run test:ci     # Run once (for CI)
 
 ### What to Test
 
-| Category | Examples |
-|----------|----------|
-| Components | Form validation, button states, modal open/close |
-| Hooks | `usePolling`, `useAuth` — test with `renderHook` |
-| API client | Response parsing, error handling |
-| Utils | Formatters, validators |
+| Category | Examples | Why |
+|----------|----------|-----|
+| API client | `src/api.ts` | Auth header injection, error classification (`AuthError` vs `NetworkError`), status code mapping |
+| Auth logic | `src/auth.ts` | Role resolution, session lifecycle, `sessionStorage` fallback behavior |
+| Async hooks | `usePolling.ts` | AbortController cleanup, deduplication, visibility-aware polling |
+| Toast system | `ToastProvider.tsx` | Add/remove lifecycle, auto-dismiss timing |
+| Complex forms | `TenantsSection.tsx`, `BlockchainSection.tsx` | Validation, create/edit mode toggle, confirmation flows, side effects |
+| Role gating | `App.tsx` | Conditional rendering by role, auth error handling |
+| Error boundaries | `ErrorBoundary.tsx` | Fallback render, recovery action |
+| Pure utilities | `utils/color.ts`, `Sparkline.tsx` | Deterministic hashing, coordinate math |
 
-### Example: Component Test
+### What NOT to Test
+
+| Category | Examples | Why |
+|----------|----------|-----|
+| Presentational components | `TopBar`, `Badge`, `RoleGate`, `LearnMore`, `Login` (markup only), `BlocksSection` (table rendering) | No conditional logic; manual QA or visual regression is sufficient |
+| Skeleton loaders | `Skeleton.tsx` | No logic; testing CSS classes is not valuable |
+| Static icons | `Icons.tsx` | Pure SVG markup |
+| Simple data pass-through | `UsageSection`, `StatsStrip` (except trend math), `NodeStatusSection` (except health logic) | Props → render; cover with integration/e2e instead |
+
+### Example: API Client Test
 
 ```tsx
-// src/components/TenantForm.test.tsx
-import { render, screen, fireEvent } from '@testing-library/react'
+// src/api.test.ts
 import { describe, it, expect, vi } from 'vitest'
-import TenantForm from './TenantForm'
+import { api, AuthError, NetworkError } from './api'
 
-describe('TenantForm', () => {
-    it('submits with valid data', () => {
-        const onSubmit = vi.fn()
-        render(<TenantForm onSubmit={onSubmit} />)
+describe('api client', () => {
+  it('throws AuthError on 401', async () => {
+    global.fetch = vi.fn(() =>
+      Promise.resolve({ status: 401, ok: false } as Response)
+    )
+    await expect(api.health()).rejects.toThrow(AuthError)
+  })
 
-        fireEvent.change(screen.getByLabelText(/name/i), {
-            target: { value: 'Acme Corp' }
-        })
-        fireEvent.click(screen.getByRole('button', { name: /create/i }))
+  it('throws NetworkError when fetch fails', async () => {
+    global.fetch = vi.fn(() => Promise.reject(new Error('network down')))
+    await expect(api.health()).rejects.toThrow(NetworkError)
+  })
+})
+```
 
-        expect(onSubmit).toHaveBeenCalledWith(expect.objectContaining({
-            name: 'Acme Corp'
-        }))
-    })
+### Example: Auth Hook Test
+
+```tsx
+// src/auth.test.ts
+import { describe, it, expect, beforeEach } from 'vitest'
+import { getRole, storeSecret, storeViewerSession, clearSession } from './auth'
+
+describe('auth', () => {
+  beforeEach(() => {
+    clearSession()
+  })
+
+  it('returns admin when secret is stored', () => {
+    storeSecret('sekrit')
+    expect(getRole()).toBe('admin')
+  })
+
+  it('returns viewer when viewer session is stored', () => {
+    storeViewerSession()
+    expect(getRole()).toBe('viewer')
+  })
+
+  it('returns null when session is cleared', () => {
+    storeSecret('sekrit')
+    clearSession()
+    expect(getRole()).toBeNull()
+  })
+})
+```
+
+### Example: Complex Form Test
+
+```tsx
+// src/TenantsSection.test.tsx
+import { render, screen, fireEvent, waitFor } from '@testing-library/react'
+import { describe, it, expect, vi } from 'vitest'
+import TenantsSection from './TenantsSection'
+
+describe('TenantsSection', () => {
+  it('toggles from create to edit mode and pre-fills fields', () => {
+    const tenant = {
+      id: 't1', name: 'Acme', quota_rpm: 500, quota_rps: 5,
+      quota_daily: 50000, plan: 'pro', created_at: new Date().toISOString()
+    }
+
+    render(
+      <TenantsSection
+        tenants={[tenant]}
+        networks={[]}
+        hasLoaded={true}
+        onTenantCreated={vi.fn()}
+        onTenantDeleted={vi.fn()}
+        onTenantUpdated={vi.fn()}
+      />
+    )
+
+    fireEvent.click(screen.getByRole('button', { name: /edit/i }))
+    expect(screen.getByDisplayValue('Acme')).toBeInTheDocument()
+    expect(screen.getByDisplayValue('pro')).toBeInTheDocument()
+  })
 })
 ```
 
@@ -169,8 +245,8 @@ describe('TenantForm', () => {
 |-------|--------|-------------|
 | Go critical paths (auth, proxy, rate limit) | ≥ 80% | CI gate |
 | Go other packages | ≥ 60% | CI warning |
-| Frontend components | ≥ 70% | CI gate |
-| Frontend hooks/utils | ≥ 75% | CI gate |
+| Frontend API client, auth, hooks | ≥ 75% | CI gate |
+| Frontend complex forms & role gating | ≥ 60% | CI warning |
 
 > **Current reality check (2026-08-24):** `shared/util/ssrf.go` (90.6%) and `gateway/middleware/ratelimit.go` (84.0%) still meet the critical-path target. `gateway/proxy` improved from 0% → 47.6%, `shared/storage/redis` from 0% → 51.7%, and `shared/telemetry` from 0% → 47.1%. Priorities to close the 80% gap: `gateway/proxy` (cache hit / upstream success), `shared/telemetry` (`RecordRequestLog`, `process`), and `shared/storage/redis` (`Get`/`Set`).
 

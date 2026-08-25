@@ -1,8 +1,9 @@
 .PHONY: build-gateway build-admin build-ingestor build-web build-all \
-        test test-unit test-integration test-docker test-infra-up test-infra-down test-down \
+        test test-unit test-integration test-docker test-web test-web-docker \
+        test-infra-up test-infra-down test-down \
         lint migrate up up-dev install clean-test-results
 
-# ─── Builds (unchanged) ─────────────────────────────────────────────────────
+# ─── Builds ───────────────────────────────────────────────────────────────────
 
 build-gateway:
 	docker build -f backend/gateway/Dockerfile -t blockmesh-gateway:latest ./backend
@@ -18,7 +19,7 @@ build-web:
 
 build-all: build-gateway build-admin build-ingestor build-web
 
-# ─── Testing ────────────────────────────────────────────────────────────────
+# ─── Testing ──────────────────────────────────────────────────────────────────
 
 # Fast unit tests — no Docker, no database, no external deps.
 test-unit:
@@ -34,12 +35,29 @@ endif
 # Safe default: 'make test' now only runs unit tests.
 test: test-unit
 
-# Full test suite inside Docker with artifacts.
-# Writes logs, JSON, and coverage to test-results/
+# Frontend tests — local (requires Node 20+).
+test-web:
+	cd web && npm run test:ci
+
+# Frontend tests — Docker only. No Postgres/Redis needed.
+test-web-docker:
+	@mkdir -p test-results
+	docker compose -f docker-compose.test.yml run --rm web-test
+	@echo "✅ Frontend results in test-results/web/"
+
+# Full CI pipeline — backend (Go + Postgres/Redis) then frontend (Vitest).
 test-docker:
 	@mkdir -p test-results
+	@# 1. Backend tests
 	docker compose -f docker-compose.test.yml up --build --abort-on-container-exit test-runner
-	@echo "✅ Results in test-results/"
+	@# 2. Frontend tests
+	docker compose -f docker-compose.test.yml run --rm web-test
+	@# 3. Tear down test infra
+	docker compose -f docker-compose.test.yml down
+	@echo "✅ Backend results in test-results/logs/ and test-results/summaries/"
+	@echo "✅ Frontend results in test-results/web/"
+
+# ─── Test Infrastructure ──────────────────────────────────────────────────────
 
 # Start only the test databases (Postgres on :5433, Redis on :6380).
 test-infra-up:
@@ -58,7 +76,7 @@ test-down: test-infra-down
 clean-test-results:
 	rm -rf test-results
 
-# ─── Existing targets (unchanged) ───────────────────────────────────────────
+# ─── Existing targets (unchanged) ─────────────────────────────────────────────
 
 lint:
 	cd backend && golangci-lint run

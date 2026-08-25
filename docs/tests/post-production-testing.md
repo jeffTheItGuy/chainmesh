@@ -59,33 +59,18 @@ curl -sf "${ADMIN_URL}/health" | grep -q '"status":"ok"' && echo "✓ Admin API 
 curl -sf "${ADMIN_URL}/health/nodes" > /dev/null && echo "✓ Node health endpoint reachable"
 
 # 3. Authenticated RPC call
-RESPONSE=$(curl -sf -X POST "${GATEWAY_URL}" \
-  -H "Authorization: Bearer ${TEST_API_KEY}" \
-  -H "Content-Type: application/json" \
-  -d '{"jsonrpc":"2.0","method":"eth_chainId","params":[],"id":1}')
+RESPONSE=$(curl -sf -X POST "${GATEWAY_URL}"   -H "Authorization: Bearer ${TEST_API_KEY}"   -H "Content-Type: application/json"   -d '{"jsonrpc":"2.0","method":"eth_chainId","params":[],"id":1}')
 echo "${RESPONSE}" | grep -q '"result"' && echo "✓ Authenticated RPC works"
 
 # 4. Cache behavior
-RESPONSE1=$(curl -s -X POST "${GATEWAY_URL}" \
-  -H "Authorization: Bearer ${TEST_API_KEY}" \
-  -H "Content-Type: application/json" \
-  -d '{"jsonrpc":"2.0","method":"eth_chainId","params":[],"id":1}' \
-  -D - | grep "X-Cache:")
+RESPONSE1=$(curl -s -X POST "${GATEWAY_URL}"   -H "Authorization: Bearer ${TEST_API_KEY}"   -H "Content-Type: application/json"   -d '{"jsonrpc":"2.0","method":"eth_chainId","params":[],"id":1}'   -D - | grep "X-Cache:")
 echo "${RESPONSE1}" | grep -q "MISS" && echo "✓ Cache miss on first call"
 
-RESPONSE2=$(curl -s -X POST "${GATEWAY_URL}" \
-  -H "Authorization: Bearer ${TEST_API_KEY}" \
-  -H "Content-Type: application/json" \
-  -d '{"jsonrpc":"2.0","method":"eth_chainId","params":[],"id":1}' \
-  -D - | grep "X-Cache:")
+RESPONSE2=$(curl -s -X POST "${GATEWAY_URL}"   -H "Authorization: Bearer ${TEST_API_KEY}"   -H "Content-Type: application/json"   -d '{"jsonrpc":"2.0","method":"eth_chainId","params":[],"id":1}'   -D - | grep "X-Cache:")
 echo "${RESPONSE2}" | grep -q "HIT" && echo "✓ Cache hit on second call"
 
 # 5. Rate limit headers present
-HEADERS=$(curl -s -X POST "${GATEWAY_URL}" \
-  -H "Authorization: Bearer ${TEST_API_KEY}" \
-  -H "Content-Type: application/json" \
-  -d '{"jsonrpc":"2.0","method":"eth_blockNumber","params":[],"id":1}' \
-  -D -)
+HEADERS=$(curl -s -X POST "${GATEWAY_URL}"   -H "Authorization: Bearer ${TEST_API_KEY}"   -H "Content-Type: application/json"   -d '{"jsonrpc":"2.0","method":"eth_blockNumber","params":[],"id":1}'   -D -)
 echo "${HEADERS}" | grep -q "X-RateLimit-Remaining-Minute" && echo "✓ Rate limit headers present"
 
 # 6. Dashboard loads
@@ -125,10 +110,7 @@ MAX=0
 
 for i in $(seq 1 $SAMPLES); do
     START=$(date +%s%N)
-    curl -sf -X POST "${GATEWAY_URL}" \
-        -H "Authorization: Bearer ${TEST_API_KEY}" \
-        -H "Content-Type: application/json" \
-        -d '{"jsonrpc":"2.0","method":"eth_chainId","params":[],"id":1}' > /dev/null
+    curl -sf -X POST "${GATEWAY_URL}"         -H "Authorization: Bearer ${TEST_API_KEY}"         -H "Content-Type: application/json"         -d '{"jsonrpc":"2.0","method":"eth_chainId","params":[],"id":1}' > /dev/null
     END=$(date +%s%N)
 
     LATENCY=$(( (END - START) / 1000000 ))  # ms
@@ -210,9 +192,7 @@ export default function () {
 Run it:
 
 ```bash
-k6 run --env GATEWAY_URL=https://api.chainmesh.example.com/v1/ \
-       --env TEST_API_KEY=your-key \
-       tests/load/gateway_load.js
+k6 run --env GATEWAY_URL=https://api.chainmesh.example.com/v1/        --env TEST_API_KEY=your-key        tests/load/gateway_load.js
 ```
 
 ### Expected Results
@@ -245,10 +225,7 @@ curl -s "${ADMIN_URL}/health/nodes" -H "X-Admin-Secret: ${ADMIN_SECRET}"
 
 # 3. Verify requests still succeed (fallback to secondary)
 for i in {1..10}; do
-    curl -sf -X POST "${GATEWAY_URL}" \
-        -H "Authorization: Bearer ${TEST_API_KEY}" \
-        -H "Content-Type: application/json" \
-        -d '{"jsonrpc":"2.0","method":"eth_chainId","params":[],"id":1}' > /dev/null
+    curl -sf -X POST "${GATEWAY_URL}"         -H "Authorization: Bearer ${TEST_API_KEY}"         -H "Content-Type: application/json"         -d '{"jsonrpc":"2.0","method":"eth_chainId","params":[],"id":1}' > /dev/null
     echo "Request $i: OK"
     sleep 1
 done
@@ -263,10 +240,7 @@ done
 docker compose stop redis
 
 # 2. Verify gateway returns 503 (fail closed)
-RESPONSE=$(curl -s -w "%{http_code}" -o /dev/null -X POST "${GATEWAY_URL}" \
-    -H "Authorization: Bearer ${TEST_API_KEY}" \
-    -H "Content-Type: application/json" \
-    -d '{"jsonrpc":"2.0","method":"eth_chainId","params":[],"id":1}')
+RESPONSE=$(curl -s -w "%{http_code}" -o /dev/null -X POST "${GATEWAY_URL}"     -H "Authorization: Bearer ${TEST_API_KEY}"     -H "Content-Type: application/json"     -d '{"jsonrpc":"2.0","method":"eth_chainId","params":[],"id":1}')
 
 if [ "$RESPONSE" -eq 503 ]; then
     echo "✓ Gateway correctly fails closed when Redis is down"
@@ -300,29 +274,21 @@ Run these after any auth-related deployment.
 ### Test: Invalid API Key Rejected
 
 ```bash
-curl -s -o /dev/null -w "%{http_code}" -X POST "${GATEWAY_URL}" \
-    -H "Authorization: Bearer bm_live_INVALIDKEY0000000000000000" \
-    -H "Content-Type: application/json" \
-    -d '{"jsonrpc":"2.0","method":"eth_chainId","params":[],"id":1}'
+curl -s -o /dev/null -w "%{http_code}" -X POST "${GATEWAY_URL}"     -H "Authorization: Bearer bm_live_INVALIDKEY0000000000000000"     -H "Content-Type: application/json"     -d '{"jsonrpc":"2.0","method":"eth_chainId","params":[],"id":1}'
 # Expected: 401
 ```
 
 ### Test: Missing Admin Secret Rejected
 
 ```bash
-curl -s -o /dev/null -w "%{http_code}" -X POST "${ADMIN_URL}/tenants" \
-    -H "Content-Type: application/json" \
-    -d '{"name":"test"}'
+curl -s -o /dev/null -w "%{http_code}" -X POST "${ADMIN_URL}/tenants"     -H "Content-Type: application/json"     -d '{"name":"test"}'
 # Expected: 403
 ```
 
 ### Test: SSRF Protection
 
 ```bash
-curl -s -o /dev/null -w "%{http_code}" -X POST "${ADMIN_URL}/blockchain" \
-    -H "X-Admin-Secret: ${ADMIN_SECRET}" \
-    -H "Content-Type: application/json" \
-    -d '{"name":"bad","rpc_endpoint_1":"http://127.0.0.1:8545","enabled":true}'
+curl -s -o /dev/null -w "%{http_code}" -X POST "${ADMIN_URL}/blockchain"     -H "X-Admin-Secret: ${ADMIN_SECRET}"     -H "Content-Type: application/json"     -d '{"name":"bad","rpc_endpoint_1":"http://127.0.0.1:8545","enabled":true}'
 # Expected: 400 (SSRF blocked)
 ```
 
@@ -343,16 +309,14 @@ curl -s "${ADMIN_URL}/blocks" | jq '. | length'
 
 ```bash
 # Query today's usage for the test tenant
-curl -s "${ADMIN_URL}/tenants/${TEST_TENANT_ID}/usage" \
-    -H "X-Admin-Secret: ${ADMIN_SECRET}" | jq '. | length'
+curl -s "${ADMIN_URL}/tenants/${TEST_TENANT_ID}/usage"     -H "X-Admin-Secret: ${ADMIN_SECRET}" | jq '. | length'
 # Expected: > 0 after making test requests
 ```
 
 ### Check: Audit Logs Recording
 
 ```bash
-curl -s "${ADMIN_URL}/audit-logs?limit=5" \
-    -H "X-Admin-Secret: ${ADMIN_SECRET}" | jq '.[0].action'
+curl -s "${ADMIN_URL}/audit-logs?limit=5"     -H "X-Admin-Secret: ${ADMIN_SECRET}" | jq '.[0].action'
 # Expected: Recent actions like CREATE_TENANT, UPDATE_BLOCKCHAIN_CONFIG
 ```
 

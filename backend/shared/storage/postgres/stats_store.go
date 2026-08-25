@@ -2,8 +2,9 @@ package postgres
 
 import (
 	"context"
-	"github.com/jeffTheItGuy/chainmesh/shared/model"
 	"time"
+
+	"github.com/jeffTheItGuy/chainmesh/shared/model"
 )
 
 func (d *DB) GetStatsSummary(
@@ -61,7 +62,6 @@ WHERE created_at >= $1
 	}
 	summary.Totals.CacheMisses = summary.Totals.Requests - summary.Totals.CacheHits
 
-	// FIX: Added "AS count" so ORDER BY count DESC works
 	rows, err := d.pool.Query(ctx,
 		`
 SELECT method, COUNT(*) AS count
@@ -87,7 +87,6 @@ LIMIT 5
 	}
 	rows.Close()
 
-	// FIX: Added "AS count"
 	rows, err = d.pool.Query(ctx,
 		`
 SELECT status, COUNT(*) AS count
@@ -112,7 +111,6 @@ LIMIT 5
 	}
 	rows.Close()
 
-	// FIX: Added "AS count"
 	rows, err = d.pool.Query(ctx,
 		`
 SELECT
@@ -225,7 +223,6 @@ WHERE bucket >= $1
 	summary.Totals.Success = summary.Totals.Requests - summary.Totals.Errors
 	summary.Totals.CacheMisses = summary.Totals.Requests - summary.Totals.CacheHits
 
-	// FIX: Added "AS count"
 	rows, err := d.pool.Query(ctx,
 		`
 SELECT method, COALESCE(SUM(requests), 0) AS count
@@ -251,7 +248,6 @@ LIMIT 5
 	}
 	rows.Close()
 
-	// FIX: Added "AS count"
 	rows, err = d.pool.Query(ctx,
 		`
 SELECT status, COALESCE(SUM(requests), 0) AS count
@@ -276,7 +272,6 @@ LIMIT 5
 	}
 	rows.Close()
 
-	// FIX: Added "AS count"
 	rows, err = d.pool.Query(ctx,
 		`
 SELECT
@@ -314,7 +309,7 @@ COALESCE(SUM(errors), 0),
 COALESCE(SUM(cache_hits), 0)
 FROM request_logs_rollup_1m
 WHERE bucket >= $1
-GROUP BY bucket
+GROUP BY date_trunc('hour', bucket)
 ORDER BY bucket
 `
 	} else {
