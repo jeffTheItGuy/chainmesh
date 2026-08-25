@@ -1,3 +1,4 @@
+// backend/ingestor/main_test.go
 package main
 
 import (
@@ -11,10 +12,17 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+
+	"github.com/jeffTheItGuy/chainmesh/shared/blockchain"
 	"github.com/jeffTheItGuy/chainmesh/shared/logger"
 	"github.com/jeffTheItGuy/chainmesh/shared/model"
 	"github.com/jeffTheItGuy/chainmesh/shared/storage/postgres"
 )
+
+// Use valid UUIDs instead of arbitrary strings
+const ingestTestNetID1 = "aa0e8400-e29b-41d4-a716-446655440001"
+const ingestTestNetID2 = "aa0e8400-e29b-41d4-a716-446655440002"
+const ingestTestNetID3 = "aa0e8400-e29b-41d4-a716-446655440003"
 
 func setupIngestorTestDB(t *testing.T) *postgres.DB {
 	dsn := os.Getenv("TEST_DATABASE_URL")
@@ -29,29 +37,35 @@ func setupIngestorTestDB(t *testing.T) *postgres.DB {
 	defer cancel()
 
 	_, err = db.Pool().Exec(ctx, `
-		CREATE TABLE IF NOT EXISTS blockchain_configs (
-			id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-			name TEXT NOT NULL,
-			rpc_endpoint_1 TEXT NOT NULL,
-			rpc_endpoint_2 TEXT,
-			chain_id TEXT,
-			enabled BOOLEAN NOT NULL DEFAULT true,
-			created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-			updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
-		);
-		CREATE TABLE IF NOT EXISTS blocks (
-			number BIGINT PRIMARY KEY,
-			hash VARCHAR(66) UNIQUE NOT NULL,
-			parent_hash VARCHAR(66) NOT NULL,
-			timestamp TIMESTAMPTZ NOT NULL,
-			tx_count INT NOT NULL DEFAULT 0,
-			raw_json JSONB,
-			network_id UUID,
-			created_at TIMESTAMPTZ DEFAULT NOW(),
-			UNIQUE(number, network_id)
-		);
-	`)
+CREATE TABLE IF NOT EXISTS blockchain_configs (
+	id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+	name TEXT NOT NULL,
+	rpc_endpoint_1 TEXT NOT NULL,
+	rpc_endpoint_2 TEXT,
+	chain_id TEXT,
+	enabled BOOLEAN NOT NULL DEFAULT true,
+	created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+	updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+ALTER TABLE blockchain_configs ADD COLUMN IF NOT EXISTS rpc_endpoint_2 TEXT;
+
+CREATE TABLE IF NOT EXISTS blocks (
+	number BIGINT PRIMARY KEY,
+	hash VARCHAR(66) UNIQUE NOT NULL,
+	parent_hash VARCHAR(66) NOT NULL,
+	timestamp TIMESTAMPTZ NOT NULL,
+	tx_count INT NOT NULL DEFAULT 0,
+	raw_json JSONB,
+	network_id UUID,
+	created_at TIMESTAMPTZ DEFAULT NOW(),
+	UNIQUE(number, network_id)
+);
+
+ALTER TABLE blocks ADD COLUMN IF NOT EXISTS network_id UUID;
+`)
 	require.NoError(t, err)
+
 	return db
 }
 
@@ -75,7 +89,7 @@ func TestFetchAndStore_Success(t *testing.T) {
 	defer srv.Close()
 
 	cfg := &model.BlockchainConfig{
-		ID:           "test-net-1",
+		ID:           ingestTestNetID1, // now a UUID
 		Name:         "TestNet",
 		RPCEndpoint1: srv.URL,
 		Enabled:      true,
@@ -108,7 +122,7 @@ func TestFetchAndStore_RPCError(t *testing.T) {
 	defer srv.Close()
 
 	cfg := &model.BlockchainConfig{
-		ID:           "test-net-2",
+		ID:           ingestTestNetID2,
 		Name:         "TestNet",
 		RPCEndpoint1: srv.URL,
 		Enabled:      true,
@@ -137,7 +151,7 @@ func TestFetchAndStore_MalformedBlock(t *testing.T) {
 	defer srv.Close()
 
 	cfg := &model.BlockchainConfig{
-		ID:           "test-net-3",
+		ID:           ingestTestNetID3,
 		Name:         "TestNet",
 		RPCEndpoint1: srv.URL,
 		Enabled:      true,

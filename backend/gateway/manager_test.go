@@ -11,6 +11,7 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+
 	"github.com/jeffTheItGuy/chainmesh/shared/blockchain"
 	"github.com/jeffTheItGuy/chainmesh/shared/logger"
 	"github.com/jeffTheItGuy/chainmesh/shared/model"
@@ -30,21 +31,25 @@ func setupManagerTestDB(t *testing.T) *postgres.DB {
 	defer cancel()
 
 	_, err = db.Pool().Exec(ctx, `
-		CREATE TABLE IF NOT EXISTS blockchain_configs (
-			id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-			name TEXT NOT NULL,
-			rpc_endpoint_1 TEXT NOT NULL,
-			rpc_endpoint_2 TEXT,
-			chain_id TEXT,
-			enabled BOOLEAN NOT NULL DEFAULT true,
-			created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-			updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
-		)
-	`)
+CREATE TABLE IF NOT EXISTS blockchain_configs (
+	id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+	name TEXT NOT NULL,
+	rpc_endpoint_1 TEXT NOT NULL,
+	rpc_endpoint_2 TEXT,
+	chain_id TEXT,
+	enabled BOOLEAN NOT NULL DEFAULT true,
+	created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+	updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+ALTER TABLE blockchain_configs ADD COLUMN IF NOT EXISTS rpc_endpoint_2 TEXT;
+`)
 	require.NoError(t, err)
 
-	// Clean up leftovers from previous failed runs
-	_, _ = db.Pool().Exec(ctx, `DELETE FROM blockchain_configs WHERE name LIKE 'ManagerTest%'`)
+	// FIX: Delete ALL configs to ensure test isolation.
+	// Other test packages (proxy, postgres) leave configs behind in the shared DB.
+	_, err = db.Pool().Exec(ctx, `DELETE FROM blockchain_configs`)
+	require.NoError(t, err)
 
 	return db
 }
@@ -66,10 +71,8 @@ func TestManager_Start_EmptyConfigs(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 
-	// Must not error when no networks are configured (chicken-and-egg fix)
 	err := m.Start(ctx)
 	require.NoError(t, err)
-
 	m.Stop()
 }
 
@@ -127,7 +130,6 @@ func TestManager_Reload_UpdateConfig(t *testing.T) {
 	oldClient := m.clients[cfg.ID]
 	require.NotNil(t, oldClient)
 
-	// Change the endpoint so the signature changes
 	_, err = db.Pool().Exec(ctx,
 		`UPDATE blockchain_configs SET rpc_endpoint_1 = $1 WHERE id = $2`,
 		srv2.URL, cfg.ID,
@@ -163,7 +165,6 @@ func TestManager_Reload_RemoveConfig(t *testing.T) {
 	require.NoError(t, m.reload(ctx))
 	assert.Contains(t, m.clients, cfg.ID)
 
-	// Disable the config
 	_, err = db.Pool().Exec(ctx,
 		`UPDATE blockchain_configs SET enabled = false WHERE id = $1`,
 		cfg.ID,
@@ -207,7 +208,6 @@ func TestManager_Health(t *testing.T) {
 	require.NoError(t, m.reload(ctx))
 	defer m.Stop()
 
-	// Let the async initial health check finish
 	time.Sleep(200 * time.Millisecond)
 
 	health := m.Health()
@@ -235,7 +235,6 @@ func TestManager_Stop_ClearsClients(t *testing.T) {
 
 	m := NewManager(db, logger.New())
 	require.NoError(t, m.reload(ctx))
-
 	assert.NotEmpty(t, m.clients)
 
 	m.Stop()

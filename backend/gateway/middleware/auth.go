@@ -6,7 +6,6 @@ import (
 	"strings"
 
 	"github.com/jeffTheItGuy/chainmesh/shared/model"
-	"github.com/jeffTheItGuy/chainmesh/shared/storage/postgres"
 )
 
 type tenantKey struct{}

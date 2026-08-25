@@ -7,26 +7,32 @@ import (
 )
 
 func (d *DB) RecordAuditLog(ctx context.Context, log *model.AuditLog) error {
+	// Handle empty IPAddress — INET column rejects empty strings
+	var ipAddress any
+	if log.IPAddress != "" {
+		ipAddress = log.IPAddress
+	}
+
 	_, err := d.pool.Exec(ctx,
 		`
-		INSERT INTO audit_logs (
-			actor,
-			action,
-			resource_type,
-			resource_id,
-			details,
-			ip_address,
-			user_agent,
-			created_at
-		)
-		VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
-		`,
+INSERT INTO audit_logs (
+	actor,
+	action,
+	resource_type,
+	resource_id,
+	details,
+	ip_address,
+	user_agent,
+	created_at
+)
+VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+`,
 		log.Actor,
 		log.Action,
 		log.ResourceType,
 		log.ResourceID,
 		log.Details,
-		log.IPAddress,
+		ipAddress,
 		log.UserAgent,
 		log.CreatedAt,
 	)
@@ -46,11 +52,11 @@ func (d *DB) ListAuditLogs(ctx context.Context, limit, offset int) ([]model.Audi
 
 	rows, err := d.pool.Query(ctx,
 		`
-		SELECT id, actor, action, resource_type, resource_id, details, ip_address::text, user_agent, created_at
-		FROM audit_logs
-		ORDER BY created_at DESC
-		LIMIT $1 OFFSET $2
-		`,
+SELECT id, actor, action, resource_type, resource_id, details, COALESCE(ip_address::text, ''), user_agent, created_at
+FROM audit_logs
+ORDER BY created_at DESC
+LIMIT $1 OFFSET $2
+`,
 		limit, offset,
 	)
 	if err != nil {

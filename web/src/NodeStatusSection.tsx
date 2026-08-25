@@ -1,15 +1,16 @@
 import { useCallback, useState, useRef } from 'react'
 import { api, type NetworkHealth } from './api'
 import { usePolling } from './hooks/usePolling'
-import { useToast } from './components/ToastProvider'
 import { SkeletonTable } from './components/Skeleton'
+import { IconServer, IconRefresh } from './components/Icons'
+import Badge from './components/Badge'
+import { colorForId } from './utils/color'
 
 export default function NodeStatusSection() {
   const [health, setHealth] = useState<NetworkHealth[]>([])
   const [error, setError] = useState('')
   const [loading, setLoading] = useState(false)
   const [hasLoaded, setHasLoaded] = useState(false)
-  const { showToast } = useToast()
 
   const reqId = useRef(0)
 
@@ -44,7 +45,6 @@ export default function NodeStatusSection() {
 
   const handleRefresh = () => {
     load(new AbortController().signal, false)
-    showToast('Refreshing node status...', 'success')
   }
 
   if (!hasLoaded) {
@@ -53,7 +53,10 @@ export default function NodeStatusSection() {
         <div className="card-header">
           <div>
             <span className="eyebrow">Infrastructure</span>
-            <h2 className="card-title">Node status</h2>
+            <h2 className="card-title card-title-row">
+              <IconServer size={16} className="card-icon" />
+              Node status
+            </h2>
           </div>
         </div>
         <SkeletonTable rows={4} />
@@ -66,9 +69,13 @@ export default function NodeStatusSection() {
       <div className="card-header">
         <div>
           <span className="eyebrow">Infrastructure</span>
-          <h2 className="card-title">Node status</h2>
+          <h2 className="card-title card-title-row">
+            <IconServer size={16} className="card-icon" />
+            Node status
+          </h2>
         </div>
-        <button className="btn btn-ghost" onClick={handleRefresh} disabled={loading}>
+        <button className="btn btn-ghost btn-with-icon" onClick={handleRefresh} disabled={loading}>
+          <IconRefresh size={14} className={loading ? 'icon-spin' : ''} />
           {loading ? 'Refreshing…' : 'Refresh'}
         </button>
       </div>
@@ -83,7 +90,11 @@ export default function NodeStatusSection() {
         <div className="flex flex-col gap-16">
           {health.map((network) => (
             <div key={network.network_id} className="table-wrap">
-              <div className="eyebrow mb-8">
+              <div className="eyebrow mb-8 flex items-center gap-8">
+                <span
+                  className="network-dot"
+                  style={{ background: colorForId(network.network_id) }}
+                />
                 Network {network.network_id.slice(0, 8)}
               </div>
               <table className="table">
@@ -103,11 +114,9 @@ export default function NodeStatusSection() {
                         {node.url.replace(/^https?:\/\//, '')}
                       </td>
                       <td>
-                        {node.healthy ? (
-                          <span style={{ color: 'var(--success)' }}>Healthy</span>
-                        ) : (
-                          <span style={{ color: 'var(--danger)' }}>Down</span>
-                        )}
+                        <Badge tone={node.healthy ? 'success' : 'danger'}>
+                          {node.healthy ? 'Healthy' : 'Down'}
+                        </Badge>
                       </td>
                       <td className="mono">{node.latency_ms}ms</td>
                       <td>{node.consecutive_fails}</td>

@@ -1,7 +1,8 @@
 import { useCallback, useState, useRef } from 'react'
-import { api, type StatsCount, type StatsSummary } from './api'
+import { api, type StatsCount, type StatsSummary, type StatsSeriesPoint } from './api'
 import { usePolling } from './hooks/usePolling'
 import { SkeletonStat, SkeletonChart, SkeletonTable } from './components/Skeleton'
+import { IconActivity, IconRefresh } from './components/Icons'
 
 type Range = '15m' | '1h' | '24h'
 
@@ -30,6 +31,92 @@ function CountTable({ title, items }: { title: string; items: StatsCount[] }) {
         </table>
       )}
     </div>
+  )
+}
+
+function RequestChart({ series }: { series: StatsSeriesPoint[] }) {
+  const width = 640
+  const height = 160
+  const padTop = 14
+  const padBottom = 22
+  const padLeft = 2
+  const padRight = 2
+  const innerHeight = height - padTop - padBottom
+
+  const maxRequests = Math.max(...series.map((p) => p.requests), 1)
+
+  const xFor = (i: number) =>
+    padLeft + (i / Math.max(series.length - 1, 1)) * (width - padLeft - padRight)
+  const yFor = (v: number) => padTop + innerHeight - (v / maxRequests) * innerHeight
+
+  const linePoints = series.map((p, i) => `${xFor(i)},${yFor(p.requests)}`).join(' ')
+  const areaPoints = `${padLeft},${padTop + innerHeight} ${linePoints} ${xFor(
+    series.length - 1
+  )},${padTop + innerHeight}`
+
+  const firstLabel = new Date(series[0].time).toLocaleTimeString([], {
+    hour: '2-digit',
+    minute: '2-digit',
+  })
+  const lastLabel = new Date(series[series.length - 1].time).toLocaleTimeString([], {
+    hour: '2-digit',
+    minute: '2-digit',
+  })
+
+  return (
+    <svg
+      className="request-chart"
+      viewBox={`0 0 ${width} ${height}`}
+      preserveAspectRatio="none"
+      role="img"
+      aria-label={`Request volume across ${series.length} data points, peaking at ${maxRequests} requests`}
+    >
+      {[0, 0.5, 1].map((g) => {
+        const y = padTop + innerHeight * (1 - g)
+        return (
+          <line key={g} x1={padLeft} x2={width - padRight} y1={y} y2={y} className="chart-grid-line" />
+        )
+      })}
+
+      <polygon points={areaPoints} className="chart-area-fill" />
+      <polyline points={linePoints} className="chart-line" />
+
+      {series.map((p, i) => (
+        <circle
+          key={`hit-${p.time}-${i}`}
+          cx={xFor(i)}
+          cy={yFor(p.requests)}
+          r={8}
+          className="chart-hit-target"
+        >
+          <title>
+            {`${new Date(p.time).toLocaleString()} — ${p.requests} requests, ${p.errors} errors, ${p.cache_hits} cache hits`}
+          </title>
+        </circle>
+      ))}
+
+      {series.map((p, i) =>
+        p.errors > 0 ? (
+          <circle
+            key={`err-${p.time}-${i}`}
+            cx={xFor(i)}
+            cy={yFor(p.requests)}
+            r={3}
+            className="chart-error-dot"
+          />
+        ) : null
+      )}
+
+      <text x={padLeft} y={height - 6} className="chart-axis-label">
+        {firstLabel}
+      </text>
+      <text x={width - padRight} y={height - 6} textAnchor="end" className="chart-axis-label">
+        {lastLabel}
+      </text>
+      <text x={padLeft} y={padTop + 10} className="chart-axis-label chart-axis-label--muted">
+        {maxRequests.toLocaleString()} req peak
+      </text>
+    </svg>
   )
 }
 
@@ -76,15 +163,16 @@ export default function MonitoringSection() {
       ? ((stats.totals.cache_hits / stats.totals.requests) * 100).toFixed(1)
       : '0.0'
 
-  const maxRequests = stats ? Math.max(...stats.series.map((point) => point.requests), 1) : 1
-
   if (!hasLoaded && !stats) {
     return (
       <section className="card">
         <div className="card-header">
           <div>
             <span className="eyebrow">Observability</span>
-            <h2 className="card-title">Monitoring</h2>
+            <h2 className="card-title card-title-row">
+              <IconActivity size={16} className="card-icon" />
+              Monitoring
+            </h2>
           </div>
         </div>
         <div className="grid grid-cols-auto-160 gap-16">
@@ -109,7 +197,10 @@ export default function MonitoringSection() {
       <div className="card-header">
         <div>
           <span className="eyebrow">Observability</span>
-          <h2 className="card-title">Monitoring</h2>
+          <h2 className="card-title card-title-row">
+            <IconActivity size={16} className="card-icon" />
+            Monitoring
+          </h2>
         </div>
         <div className="flex items-center gap-8">
           <select
@@ -123,10 +214,11 @@ export default function MonitoringSection() {
             <option value="24h">Last 24 hours</option>
           </select>
           <button
-            className="btn btn-ghost"
+            className="btn btn-ghost btn-with-icon"
             onClick={() => load(new AbortController().signal, false)}
             disabled={loading}
           >
+            <IconRefresh size={14} className={loading ? 'icon-spin' : ''} />
             {loading ? 'Refreshing…' : 'Refresh'}
           </button>
         </div>
@@ -167,23 +259,8 @@ export default function MonitoringSection() {
             {stats.series.length === 0 ? (
               <div className="empty-state">No requests recorded for this range.</div>
             ) : (
-              <div
-                className="chart-container"
-                role="img"
-                aria-label={`Request volume chart showing ${stats.series.length} data points`}
-              >
-                {stats.series.map((point, index) => {
-                  const height = Math.max(2, (point.requests / maxRequests) * 100)
-                  const label = new Date(point.time).toLocaleString()
-                  return (
-                    <div
-                      key={`${point.time}-${index}`}
-                      title={`${label} — ${point.requests} requests, ${point.errors} errors`}
-                      className={`chart-bar ${point.errors > 0 ? 'chart-bar--error' : ''}`}
-                      style={{ height: `${height}%` }}
-                    />
-                  )
-                })}
+              <div className="chart-container">
+                <RequestChart series={stats.series} />
               </div>
             )}
           </div>

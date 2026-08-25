@@ -102,6 +102,13 @@ export default function App() {
     [blocks]
   )
 
+  // Oldest -> newest tx counts, for the sparkline trend in StatsStrip.
+  // Blocks come back newest-first, so this just reverses the list.
+  const txSeries = useMemo(
+    () => blocks.slice().reverse().map((b) => b.tx_count),
+    [blocks]
+  )
+
   if (!role) {
     if (showAdminLogin) {
       return (
@@ -139,6 +146,7 @@ export default function App() {
           tenantCount={role === 'admin' ? tenants.length : null}
           latestBlock={latestBlock}
           totalTxCount={totalTxCount}
+          txSeries={txSeries}
         />
         {loadError && (
           <div className="alert alert-error" role="alert">

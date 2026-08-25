@@ -1,3 +1,4 @@
+// backend/shared/storage/postgres/block_store.go
 package postgres
 
 import (
@@ -34,7 +35,7 @@ func (d *DB) GetLatestBlock(ctx context.Context, networkID string) (*model.Block
 
 func (d *DB) ListBlocks(ctx context.Context, limit int) ([]model.Block, error) {
 	rows, err := d.pool.Query(ctx,
-		`SELECT b.number, b.hash, b.parent_hash, b.timestamp, b.tx_count, b.network_id, c.name as network_name
+		`SELECT b.number, b.hash, b.parent_hash, b.timestamp, b.tx_count, b.network_id, COALESCE(c.name, '') as network_name
 		 FROM blocks b
 		 LEFT JOIN blockchain_configs c ON b.network_id = c.id
 		 ORDER BY b.number DESC LIMIT $1`,
