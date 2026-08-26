@@ -1,5 +1,6 @@
 .PHONY: build-gateway build-admin build-ingestor build-web build-all \
-        test test-unit test-integration test-docker test-web test-web-docker \
+        test test-unit test-integration test-integration-stack test-integration-down \
+        test-docker test-web test-web-docker \
         test-infra-up test-infra-down test-down \
         lint migrate up up-dev install clean-test-results
 
@@ -25,12 +26,21 @@ build-all: build-gateway build-admin build-ingestor build-web
 test-unit:
 	cd backend && go test -race ./shared/util/... ./shared/blockchain/... ./gateway/middleware/...
 
-# Integration tests — requires a running Postgres.
+# Integration tests — requires a running Postgres (package-level).
 test-integration:
 ifndef TEST_DATABASE_URL
 	$(error TEST_DATABASE_URL is not set. Start test infra with 'make test-infra-up', then run this again)
 endif
 	cd backend && TEST_DATABASE_URL=$(TEST_DATABASE_URL) go test -race ./admin/... ./shared/storage/postgres/... ./gateway/proxy/... ./shared/telemetry/...
+
+# Full-stack black-box integration tests — spins up real Gateway + Admin API
+# and runs the test suite in tests/go/ against them.
+test-integration-stack:
+	docker compose -f docker-compose.integration.yml up --build --abort-on-container-exit
+
+# Tear down the full-stack integration environment and wipe volumes.
+test-integration-down:
+	docker compose -f docker-compose.integration.yml down -v
 
 # Safe default: 'make test' now only runs unit tests.
 test: test-unit

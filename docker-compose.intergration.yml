@@ -1,0 +1,106 @@
+# docker-compose.integration.yml
+# Full-stack integration tests — runs the real Gateway + Admin API and
+# executes the test suite in tests/go/ against them.
+#
+# Usage:
+#   docker compose -f docker-compose.integration.yml up --build --abort-on-container-exit
+#   docker compose -f docker-compose.integration.yml down -v
+
+services:
+  postgres:
+    image: postgres:15-alpine
+    environment:
+      POSTGRES_USER: blockmesh
+      POSTGRES_PASSWORD: blockmesh
+      POSTGRES_DB: blockmesh
+    volumes:
+      - ./backend/database/migrations:/docker-entrypoint-initdb.d:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U blockmesh -d blockmesh"]
+      interval: 2s
+      timeout: 5s
+      retries: 10
+    networks:
+      - blockmesh-integration
+
+  redis:
+    image: redis:7-alpine
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 2s
+      timeout: 3s
+      retries: 10
+    networks:
+      - blockmesh-integration
+
+  gateway:
+    build:
+      context: .
+      dockerfile: .docker/prod/prod-gateway.Dockerfile
+    environment:
+      DATABASE_URL: postgres://blockmesh:blockmesh@postgres:5432/blockmesh
+      REDIS_ADDR: redis:6379
+      RPC_ENDPOINT_1: ${RPC_ENDPOINT_1:-https://ethereum-sepolia-rpc.publicnode.com}
+      RPC_ENDPOINT_2: ${RPC_ENDPOINT_2:-https://rpc.sepolia.org}
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://localhost:8080/health || exit 1"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+    networks:
+      - blockmesh-integration
+
+  admin:
+    build:
+      context: .
+      dockerfile: .docker/prod/prod-admin.Dockerfile
+    environment:
+      DATABASE_URL: postgres://blockmesh:blockmesh@postgres:5432/blockmesh
+      ADMIN_SECRET: ${ADMIN_SECRET:-integration-secret}
+    depends_on:
+      postgres:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://localhost:8081/health || exit 1"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+    networks:
+      - blockmesh-integration
+
+  integration-tests:
+    image: golang:1.26-alpine
+    working_dir: /app/tests/go
+    volumes:
+      - ./tests/go:/app/tests/go:ro
+      - go-mod-cache:/go/pkg/mod
+    environment:
+      ADMIN_SECRET: ${ADMIN_SECRET:-integration-secret}
+      GATEWAY_URL: http://gateway:8080/v1/
+      ADMIN_URL: http://admin:8081
+    depends_on:
+      gateway:
+        condition: service_healthy
+      admin:
+        condition: service_healthy
+    command: >
+      sh -c "
+        apk add --no-cache git &&
+        if [ ! -f go.mod ]; then go mod init integration; fi &&
+        go mod tidy &&
+        go test ./... -tags=integration -v
+      "
+    networks:
+      - blockmesh-integration
+
+networks:
+  blockmesh-integration:
+    driver: bridge
+
+volumes:
+  go-mod-cache:
