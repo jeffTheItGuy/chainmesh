@@ -1,6 +1,7 @@
 package proxy
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"io"
@@ -80,6 +81,13 @@ func (p *Proxy) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 	bytesIn := int64(len(body))
 
+	// Detect JSON-RPC batch requests (array) vs single requests (object)
+	trimmed := bytes.TrimSpace(body)
+	if len(trimmed) > 0 && trimmed[0] == '[' {
+		p.handleBatch(w, r, tenant, requestID, body, bytesIn, start)
+		return
+	}
+
 	var req blockchain.RPCRequest
 	if err := json.Unmarshal(body, &req); err != nil {
 		p.recordOutcome(tenant, requestID, "", "", "invalid_request", start, false, bytesIn)
@@ -102,7 +110,8 @@ func (p *Proxy) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 		if err != nil || defaultCfg == nil {
 			p.recordOutcome(tenant, requestID, "", req.Method, "network_unavailable", start, false, bytesIn)
-			writeJSONError(w, http.StatusInternalServerError, "no blockchain network configured")
+			// FIX: Return 503 per OpenAPI spec, not 500
+			writeJSONError(w, http.StatusServiceUnavailable, "no blockchain network configured")
 			return
 		}
 
@@ -167,6 +176,50 @@ func (p *Proxy) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	w.Write(resp)
 
 	p.recordOutcome(tenant, requestID, networkID, req.Method, "success", start, false, bytesIn)
+}
+
+func (p *Proxy) handleBatch(w http.ResponseWriter, r *http.Request, tenant *model.Tenant, requestID string, body []byte, bytesIn int64, start time.Time) {
+	log := p.log.With("request_id", requestID)
+
+	networkID := tenant.BlockchainNetworkID
+	if networkID == "" {
+		ctx, cancel := context.WithTimeout(r.Context(), 5*time.Second)
+		defaultCfg, err := p.db.GetDefaultBlockchainConfig(ctx)
+		cancel()
+
+		if err != nil || defaultCfg == nil {
+			p.recordOutcome(tenant, requestID, "", "", "network_unavailable", start, false, bytesIn)
+			writeJSONError(w, http.StatusServiceUnavailable, "no blockchain network configured")
+			return
+		}
+
+		networkID = defaultCfg.ID
+	}
+
+	bc, ok := p.manager.Get(networkID)
+	if !ok {
+		p.recordOutcome(tenant, requestID, networkID, "", "network_unavailable", start, false, bytesIn)
+		writeJSONError(w, http.StatusServiceUnavailable, "blockchain network unavailable")
+		return
+	}
+
+	resp, err := bc.ProxyRaw(r.Context(), body)
+	if err != nil {
+		log.Error(
+			"upstream batch failed",
+			"network_id", networkID,
+			"err", err,
+		)
+
+		p.recordOutcome(tenant, requestID, networkID, "", "upstream_error", start, false, bytesIn)
+		writeJSONError(w, http.StatusBadGateway, "upstream unavailable")
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	w.Write(resp)
+
+	p.recordOutcome(tenant, requestID, networkID, "", "success", start, false, bytesIn)
 }
 
 func (p *Proxy) recordOutcome(

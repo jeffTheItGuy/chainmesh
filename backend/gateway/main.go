@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"net/url"
 	"os"
@@ -13,6 +14,7 @@ import (
 	"github.com/jeffTheItGuy/chainmesh/gateway/middleware"
 	"github.com/jeffTheItGuy/chainmesh/gateway/proxy"
 	"github.com/jeffTheItGuy/chainmesh/shared/logger"
+	"github.com/jeffTheItGuy/chainmesh/shared/model"
 	"github.com/jeffTheItGuy/chainmesh/shared/statsrollup"
 	"github.com/jeffTheItGuy/chainmesh/shared/storage/postgres"
 	"github.com/jeffTheItGuy/chainmesh/shared/storage/redis"
@@ -65,7 +67,17 @@ func main() {
 
 	manager := NewManager(db, log)
 
+	// Seed a default blockchain network from environment variables if the
+	// database is empty. This prevents a cold-start chicken-and-egg problem
+	// where the gateway has no upstream to proxy to until an admin manually
+	// creates a network via the Admin API.
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	if err := seedDefaultConfig(ctx, db); err != nil {
+		log.Warn("no default blockchain config seeded", "err", err)
+	}
+	cancel()
+
+	ctx, cancel = context.WithTimeout(context.Background(), 10*time.Second)
 	err = manager.Start(ctx)
 	cancel()
 	if err != nil {
@@ -146,4 +158,27 @@ func main() {
 	shutdownCtx, shutdownCancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer shutdownCancel()
 	srv.Shutdown(shutdownCtx)
+}
+
+// seedDefaultConfig inserts a blockchain config from RPC_ENDPOINT_1 / RPC_ENDPOINT_2
+// when the database has no enabled networks. This lets integration tests and fresh
+// deployments work without a manual admin setup step.
+func seedDefaultConfig(ctx context.Context, db *postgres.DB) error {
+	// If there's already at least one enabled config, leave it alone.
+	if cfg, err := db.GetDefaultBlockchainConfig(ctx); err == nil && cfg != nil {
+		return nil
+	}
+
+	endpoint1 := os.Getenv("RPC_ENDPOINT_1")
+	if endpoint1 == "" {
+		return fmt.Errorf("RPC_ENDPOINT_1 not set and DB has no blockchain config")
+	}
+
+	_, err := db.SaveBlockchainConfig(ctx, &model.BlockchainConfig{
+		Name:         "default",
+		RPCEndpoint1: endpoint1,
+		RPCEndpoint2: os.Getenv("RPC_ENDPOINT_2"),
+		Enabled:      true,
+	})
+	return err
 }

@@ -303,6 +303,82 @@ func (c *Client) Call(ctx context.Context, method string, params ...any) (json.R
 	return nil, fmt.Errorf("all endpoints failed")
 }
 
+// ProxyRaw forwards a raw JSON-RPC payload (single or batch) to the best
+// available endpoint and returns the raw response body. This is used by the
+// gateway proxy to support JSON-RPC batch requests without re-serialization.
+func (c *Client) ProxyRaw(ctx context.Context, body []byte) ([]byte, error) {
+	requestID := requestid.FromContext(ctx)
+	log := c.log.With(
+		"request_id", requestID,
+		"network_id", c.networkID,
+	)
+	endpoints := c.endpointsForCall()
+	for _, ep := range endpoints {
+		start := time.Now()
+		req, _ := http.NewRequestWithContext(ctx, "POST", ep, bytes.NewReader(body))
+		req.Header.Set("Content-Type", "application/json")
+		req.Header.Set("User-Agent", "BlockMesh-Gateway/1.0")
+
+		if requestID != "" {
+			req.Header.Set("X-Request-ID", requestID)
+		}
+
+		resp, err := c.http.Do(req)
+		latency := time.Since(start)
+
+		if err != nil {
+			metrics.UpstreamErrorsTotal.WithLabelValues(
+				c.networkID,
+				ep,
+				"batch",
+				"transport",
+			).Inc()
+			log.Warn(
+				"proxy raw failed",
+				"endpoint", ep,
+				"err", err,
+			)
+			c.markFailure(ep)
+			continue
+		}
+
+		respBody, _ := io.ReadAll(resp.Body)
+		resp.Body.Close()
+
+		if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+			metrics.UpstreamErrorsTotal.WithLabelValues(
+				c.networkID,
+				ep,
+				"batch",
+				"bad_status",
+			).Inc()
+			log.Warn(
+				"proxy raw bad status",
+				"endpoint", ep,
+				"status", resp.StatusCode,
+			)
+			c.markFailure(ep)
+			continue
+		}
+
+		metrics.UpstreamRequestDurationSeconds.WithLabelValues(
+			c.networkID,
+			ep,
+			"batch",
+		).Observe(latency.Seconds())
+
+		metrics.UpstreamRequestsTotal.WithLabelValues(
+			c.networkID,
+			ep,
+			"batch",
+			"success",
+		).Inc()
+		c.markSuccess(ep, latency)
+		return respBody, nil
+	}
+	return nil, fmt.Errorf("all endpoints failed")
+}
+
 // endpointsForCall returns the endpoint list ordered for optimal routing:
 // 1. Healthy endpoints sorted by latency ascending.
 // 2. Unhealthy endpoints as last-resort fallback.

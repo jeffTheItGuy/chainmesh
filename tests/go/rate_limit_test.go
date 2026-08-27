@@ -8,9 +8,22 @@ import (
 	"time"
 )
 
+// waitForRateWindow sleeps until there is enough room left in the current
+// rate-limit window so all requests in a test land in the same minute window.
+// This prevents flaky failures when a test starts just before a minute boundary.
+func waitForRateWindow(t *testing.T) {
+	t.Helper()
+	next := time.Now().Truncate(time.Minute).Add(time.Minute)
+	if wait := time.Until(next); wait < 3*time.Second {
+		time.Sleep(wait + 100*time.Millisecond)
+	}
+}
+
 func TestRateLimitEnforced(t *testing.T) {
-	// Create tenant with 2 RPM limit
-	apiKey := createTestTenantWithQuota(t, 0, 2, 1000)
+	// Create tenant with 2 RPM limit (RPS disabled).
+	// NOTE: createTestTenantWithQuota signature is (rpm, rps, daily).
+	waitForRateWindow(t)
+	apiKey := createTestTenantWithQuota(t, 2, 0, 1000)
 
 	// First 2 requests should succeed
 	for i := 0; i < 2; i++ {
@@ -25,7 +38,6 @@ func TestRateLimitEnforced(t *testing.T) {
 	// Third request should be rate limited
 	resp := callGateway(t, apiKey, "eth_chainId")
 	defer resp.Body.Close()
-
 	if resp.StatusCode != http.StatusTooManyRequests {
 		t.Fatalf("expected 429, got %d", resp.StatusCode)
 	}
@@ -53,7 +65,6 @@ func TestRateLimitDailyQuota(t *testing.T) {
 	// Third request may be rate limited by daily quota
 	resp := callGateway(t, apiKey, "eth_chainId")
 	defer resp.Body.Close()
-
 	if resp.StatusCode == http.StatusTooManyRequests {
 		// Daily quota hit — acceptable
 		t.Log("daily quota enforced")
@@ -63,8 +74,10 @@ func TestRateLimitDailyQuota(t *testing.T) {
 }
 
 func TestRateLimitResets(t *testing.T) {
-	// Create tenant with 1 RPM
-	apiKey := createTestTenantWithQuota(t, 0, 1, 1000)
+	// Create tenant with 1 RPM limit (RPS disabled).
+	// NOTE: createTestTenantWithQuota signature is (rpm, rps, daily).
+	waitForRateWindow(t)
+	apiKey := createTestTenantWithQuota(t, 1, 0, 1000)
 
 	// First request succeeds
 	resp1 := callGateway(t, apiKey, "eth_chainId")
@@ -82,7 +95,8 @@ func TestRateLimitResets(t *testing.T) {
 		t.Fatalf("second request: expected 429, got %d", status2)
 	}
 
-	// Wait for window to reset (generous margin)
+	// Wait for window to reset (generous margin). A minute boundary always
+	// occurs within 60s, so 65s guarantees the next request lands in a fresh window.
 	time.Sleep(65 * time.Second)
 
 	// Should succeed again
@@ -98,7 +112,6 @@ func TestRateLimitHeadersOnSuccess(t *testing.T) {
 
 	resp := callGateway(t, apiKey, "eth_chainId")
 	defer resp.Body.Close()
-
 	if resp.StatusCode != http.StatusOK {
 		t.Fatalf("expected 200, got %d", resp.StatusCode)
 	}

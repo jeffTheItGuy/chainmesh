@@ -1,0 +1,76 @@
+name: Smoke Test (in-cluster)
+
+on:
+  workflow_dispatch:   # manual "Run workflow" button only — no schedule, no cron
+
+env:
+  NAMESPACE: chainmesh
+
+jobs:
+  smoke:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup SSH
+        env:
+          REMOTE_SERVER: ${{ secrets.REMOTE_SERVER }}
+        run: |
+          mkdir -p ~/.ssh && chmod 700 ~/.ssh
+          echo "${{ secrets.SSH_PRIVATE_KEY }}" > ~/.ssh/id_rsa && chmod 600 ~/.ssh/id_rsa
+          ssh-keyscan -H "$REMOTE_SERVER" >> ~/.ssh/known_hosts 2>/dev/null || true
+
+      - name: Copy smoke script to k3s node
+        env:
+          REMOTE_SERVER: ${{ secrets.REMOTE_SERVER }}
+          REMOTE_USER: ${{ secrets.REMOTE_USER }}
+        run: |
+          ssh -o StrictHostKeyChecking=yes "$REMOTE_USER@$REMOTE_SERVER" "mkdir -p /tmp/chainmesh-smoke"
+          scp -o StrictHostKeyChecking=yes tests/smoke/smoke-k3s.sh \
+            "$REMOTE_USER@$REMOTE_SERVER:/tmp/chainmesh-smoke/smoke-k3s.sh"
+
+      - name: Run smoke tests inside k3s
+        id: smoke
+        continue-on-error: true
+        env:
+          REMOTE_SERVER: ${{ secrets.REMOTE_SERVER }}
+          REMOTE_USER: ${{ secrets.REMOTE_USER }}
+        run: |
+          ssh -o StrictHostKeyChecking=yes "$REMOTE_USER@$REMOTE_SERVER" \
+            NAMESPACE="${{ env.NAMESPACE }}" \
+            TEST_API_KEY="${{ secrets.PROD_TEST_API_KEY }}" \
+            RESULTS_FILE="/tmp/chainmesh-smoke/results.md" \
+            bash /tmp/chainmesh-smoke/smoke-k3s.sh
+
+      - name: Fetch results from k3s node
+        if: always()
+        env:
+          REMOTE_SERVER: ${{ secrets.REMOTE_SERVER }}
+          REMOTE_USER: ${{ secrets.REMOTE_USER }}
+        run: |
+          scp -o StrictHostKeyChecking=yes \
+            "$REMOTE_USER@$REMOTE_SERVER:/tmp/chainmesh-smoke/results.md" ./smoke-results.md \
+            || echo "::warning::Could not fetch results file"
+
+      - name: Publish results to job summary
+        if: always()
+        run: |
+          if [ -f smoke-results.md ]; then
+            cat smoke-results.md >> "$GITHUB_STEP_SUMMARY"
+          else
+            echo "No results file was produced." >> "$GITHUB_STEP_SUMMARY"
+          fi
+
+      - name: Upload results artifact
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: smoke-results-${{ github.run_number }}
+          path: smoke-results.md
+          if-no-files-found: ignore
+
+      - name: Fail job if smoke tests failed
+        if: steps.smoke.outcome == 'failure'
+        run: |
+          echo "::error::Smoke tests failed — see the job summary above."
+          exit 1

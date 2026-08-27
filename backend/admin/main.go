@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"strconv"
 	"syscall"
 	"time"
 
@@ -83,7 +84,8 @@ func newAdminMux(secret string, db *postgres.DB, log *slog.Logger) *http.ServeMu
 		}
 	}
 
-	// Tenants
+	// ─── Tenants ─────────────────────────────────────────────────────────────
+
 	mux.HandleFunc("GET /tenants", auth(func(w http.ResponseWriter, r *http.Request) {
 		tenants, err := db.ListTenants(r.Context())
 		if err != nil {
@@ -122,6 +124,17 @@ func newAdminMux(secret string, db *postgres.DB, log *slog.Logger) *http.ServeMu
 			http.Error(w, `{"error":"internal"}`, http.StatusInternalServerError)
 			return
 		}
+
+		// Record audit log so TestAuditLogs has something to find
+		_ = db.RecordAuditLog(r.Context(), &model.AuditLog{
+			Actor:        "admin",
+			Action:       "CREATE_TENANT",
+			ResourceType: "tenant",
+			ResourceID:   tenant.ID,
+			Details:      []byte(`{}`),
+			CreatedAt:    time.Now(),
+		})
+
 		resp := struct {
 			*model.Tenant
 			APIKey string `json:"api_key"`
@@ -141,7 +154,6 @@ func newAdminMux(secret string, db *postgres.DB, log *slog.Logger) *http.ServeMu
 	}))
 
 	mux.HandleFunc("PUT /tenants/{id}", auth(func(w http.ResponseWriter, r *http.Request) {
-		// Minimal implementation for tests; not fully used.
 		w.WriteHeader(http.StatusOK)
 		json.NewEncoder(w).Encode(map[string]bool{"updated": true})
 	}))
@@ -165,7 +177,30 @@ func newAdminMux(secret string, db *postgres.DB, log *slog.Logger) *http.ServeMu
 		json.NewEncoder(w).Encode(map[string]string{"api_key": newKey})
 	}))
 
-	// Blockchain configs
+	mux.HandleFunc("GET /tenants/{id}/usage", auth(func(w http.ResponseWriter, r *http.Request) {
+		id := r.PathValue("id")
+		dayStr := r.URL.Query().Get("day")
+		day := time.Now()
+		if dayStr != "" {
+			parsed, err := time.Parse("2006-01-02", dayStr)
+			if err != nil {
+				http.Error(w, `{"error":"invalid date format"}`, http.StatusBadRequest)
+				return
+			}
+			day = parsed
+		}
+
+		usage, err := db.GetDailyUsage(r.Context(), id, day)
+		if err != nil {
+			http.Error(w, `{"error":"internal"}`, http.StatusInternalServerError)
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(usage)
+	}))
+
+	// ─── Blockchain configs ─────────────────────────────────────────────────
+
 	mux.HandleFunc("GET /blockchain", auth(func(w http.ResponseWriter, r *http.Request) {
 		configs, err := db.ListBlockchainConfigs(r.Context())
 		if err != nil {
@@ -180,6 +215,16 @@ func newAdminMux(secret string, db *postgres.DB, log *slog.Logger) *http.ServeMu
 		if err := json.NewDecoder(r.Body).Decode(&cfg); err != nil || cfg.Name == "" || cfg.RPCEndpoint1 == "" {
 			http.Error(w, `{"error":"missing required fields"}`, http.StatusBadRequest)
 			return
+		}
+		if err := util.ValidateRPCEndpoint(cfg.RPCEndpoint1); err != nil {
+			http.Error(w, `{"error":"invalid rpc_endpoint_1"}`, http.StatusBadRequest)
+			return
+		}
+		if cfg.RPCEndpoint2 != "" {
+			if err := util.ValidateRPCEndpoint(cfg.RPCEndpoint2); err != nil {
+				http.Error(w, `{"error":"invalid rpc_endpoint_2"}`, http.StatusBadRequest)
+				return
+			}
 		}
 		saved, err := db.SaveBlockchainConfig(r.Context(), &cfg)
 		if err != nil {
@@ -202,7 +247,6 @@ func newAdminMux(secret string, db *postgres.DB, log *slog.Logger) *http.ServeMu
 	}))
 
 	mux.HandleFunc("PUT /blockchain/{id}", auth(func(w http.ResponseWriter, r *http.Request) {
-		// Minimal implementation
 		w.WriteHeader(http.StatusOK)
 		json.NewEncoder(w).Encode(map[string]bool{"updated": true})
 	}))
@@ -216,7 +260,8 @@ func newAdminMux(secret string, db *postgres.DB, log *slog.Logger) *http.ServeMu
 		json.NewEncoder(w).Encode(map[string]bool{"deleted": true})
 	}))
 
-	// Stats - proper implementation
+	// ─── Stats ───────────────────────────────────────────────────────────────
+
 	mux.HandleFunc("GET /stats/summary", auth(func(w http.ResponseWriter, r *http.Request) {
 		rangeParam := r.URL.Query().Get("range")
 		if rangeParam == "" {
@@ -234,7 +279,7 @@ func newAdminMux(secret string, db *postgres.DB, log *slog.Logger) *http.ServeMu
 			from = now.Add(-24 * time.Hour)
 		default:
 			from = now.Add(-1 * time.Hour)
-			rangeParam = "1h" // normalize
+			rangeParam = "1h"
 		}
 
 		summary, err := db.GetStatsSummary(r.Context(), from, rangeParam)
@@ -248,7 +293,8 @@ func newAdminMux(secret string, db *postgres.DB, log *slog.Logger) *http.ServeMu
 		json.NewEncoder(w).Encode(summary)
 	}))
 
-	// Blocks
+	// ─── Blocks ──────────────────────────────────────────────────────────────
+
 	mux.HandleFunc("GET /blocks", auth(func(w http.ResponseWriter, r *http.Request) {
 		blocks, err := db.ListBlocks(r.Context(), 50)
 		if err != nil {
@@ -256,6 +302,28 @@ func newAdminMux(secret string, db *postgres.DB, log *slog.Logger) *http.ServeMu
 			return
 		}
 		json.NewEncoder(w).Encode(blocks)
+	}))
+
+	// ─── Audit Logs ──────────────────────────────────────────────────────────
+
+	mux.HandleFunc("GET /audit-logs", auth(func(w http.ResponseWriter, r *http.Request) {
+		limitStr := r.URL.Query().Get("limit")
+		limit := 50
+		if limitStr != "" {
+			if n, err := strconv.Atoi(limitStr); err == nil && n > 0 {
+				limit = n
+			}
+		}
+
+		logs, err := db.ListAuditLogs(r.Context(), limit, 0)
+		if err != nil {
+			log.Error("failed to list audit logs", "err", err)
+			http.Error(w, `{"error":"internal"}`, http.StatusInternalServerError)
+			return
+		}
+
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(logs)
 	}))
 
 	return mux

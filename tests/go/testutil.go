@@ -33,7 +33,9 @@ func adminSecret() string {
 	return "devsecret"
 }
 
-func createTestTenant(t *testing.T, quotas ...int) string {
+// createTestTenantFull creates a tenant and returns both its ID and API key.
+// Use this when a test needs the tenant ID (e.g. to hit /tenants/{id}/usage).
+func createTestTenantFull(t *testing.T, quotas ...int) (id string, apiKey string) {
 	t.Helper()
 
 	// Default quotas: rpm=100, rps=10, daily=10000
@@ -76,10 +78,24 @@ func createTestTenant(t *testing.T, quotas ...int) string {
 		t.Fatalf("decode tenant response: %v", err)
 	}
 
-	apiKey, ok := result["api_key"].(string)
+	id, ok := result["id"].(string)
+	if !ok || id == "" {
+		t.Fatal("expected id in tenant response")
+	}
+
+	apiKey, ok = result["api_key"].(string)
 	if !ok || apiKey == "" {
 		t.Fatal("expected api_key in tenant response")
 	}
+
+	return id, apiKey
+}
+
+// createTestTenant creates a tenant and returns only its API key.
+// Kept for all existing call sites that only need the key.
+func createTestTenant(t *testing.T, quotas ...int) string {
+	t.Helper()
+	_, apiKey := createTestTenantFull(t, quotas...)
 	return apiKey
 }
 
@@ -110,7 +126,7 @@ func callGateway(t *testing.T, apiKey, method string) *http.Response {
 	return resp
 }
 
-func callGatewayRaw(t *testing.T, apiKey string, payload map[string]any) *http.Response {
+func callGatewayRaw(t *testing.T, apiKey string, payload any) *http.Response {
 	t.Helper()
 
 	body, _ := json.Marshal(payload)

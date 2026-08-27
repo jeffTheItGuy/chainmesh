@@ -8,8 +8,18 @@ import (
 	goredis "github.com/redis/go-redis/v9"
 )
 
+// Clock abstracts time.Now() so tests can control rate-limit windows.
+type Clock interface {
+	Now() time.Time
+}
+
+type realClock struct{}
+
+func (realClock) Now() time.Time { return time.Now() }
+
 type Client struct {
 	client *goredis.Client
+	clock  Clock
 }
 
 type RateLimitStatus struct {
@@ -23,6 +33,15 @@ type RateLimitStatus struct {
 func New(addr string) *Client {
 	return &Client{
 		client: goredis.NewClient(&goredis.Options{Addr: addr}),
+		clock:  realClock{},
+	}
+}
+
+// NewWithClock creates a Client with an injectable clock for testing.
+func NewWithClock(addr string, clock Clock) *Client {
+	return &Client{
+		client: goredis.NewClient(&goredis.Options{Addr: addr}),
+		clock:  clock,
 	}
 }
 
@@ -48,7 +67,7 @@ func (c *Client) Expire(ctx context.Context, key string, ttl time.Duration) erro
 
 // CheckRateLimit preserves the old simple behavior for compatibility.
 func (c *Client) CheckRateLimit(ctx context.Context, tenantID string, quotaRPM int) (bool, error) {
-	key := fmt.Sprintf("ratelimit:%s:%s", tenantID, time.Now().Format("2006-01-02T15:04"))
+	key := fmt.Sprintf("ratelimit:%s:%s", tenantID, c.clock.Now().Format("2006-01-02T15:04"))
 
 	current, err := c.Incr(ctx, key)
 	if err != nil {
@@ -88,7 +107,7 @@ func (c *Client) CheckRateLimits(
 	quotaRPM int,
 	quotaDaily int,
 ) (bool, RateLimitStatus, error) {
-	now := time.Now()
+	now := c.clock.Now()
 	minuteReset := now.Truncate(time.Minute).Add(time.Minute)
 
 	status := RateLimitStatus{

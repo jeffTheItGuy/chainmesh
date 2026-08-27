@@ -1,6 +1,6 @@
 .PHONY: build-gateway build-admin build-ingestor build-web build-all \
         test test-unit test-integration test-integration-stack test-integration-down \
-        test-docker test-web test-web-docker \
+        test-integration-logs test-docker test-web test-web-docker \
         test-infra-up test-infra-down test-down \
         lint migrate up up-dev install clean-test-results
 
@@ -36,7 +36,17 @@ endif
 # Full-stack black-box integration tests — spins up real Gateway + Admin API
 # and runs the test suite in tests/go/ against them.
 test-integration-stack:
+	@mkdir -p test-results
+	docker compose -f docker-compose.integration.yml down -v 2>/dev/null || true
 	docker compose -f docker-compose.integration.yml up --build --abort-on-container-exit
+	docker compose -f docker-compose.integration.yml down -v
+
+# View the last integration test summary without re-running.
+test-integration-logs:
+	@echo "=== Integration Test Summary ==="
+	@cat test-results/integration-summary.log 2>/dev/null || echo "No summary found. Run 'make test-integration-stack' first."
+	@echo ""
+	@echo "Full log location: test-results/integration-full.log"
 
 # Tear down the full-stack integration environment and wipe volumes.
 test-integration-down:

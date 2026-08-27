@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"strings"
 	"testing"
 	"time"
 )
@@ -120,8 +121,9 @@ func TestListTenants(t *testing.T) {
 }
 
 func TestGetTenantUsage(t *testing.T) {
-	// Create a tenant first
-	apiKey := createTestTenant(t)
+	// Create a tenant and keep its ID — the usage endpoint is
+	// /tenants/{id}/usage, not /tenants/usage.
+	tenantID, apiKey := createTestTenantFull(t)
 
 	// Make a request through the gateway to generate usage
 	resp := callGateway(t, apiKey, "eth_chainId")
@@ -134,7 +136,7 @@ func TestGetTenantUsage(t *testing.T) {
 	time.Sleep(200 * time.Millisecond)
 
 	// Get usage via admin API
-	req, _ := http.NewRequest("GET", adminURL()+"/tenants/usage", nil)
+	req, _ := http.NewRequest("GET", fmt.Sprintf("%s/tenants/%s/usage", adminURL(), tenantID), nil)
 	req.Header.Set("X-Admin-Secret", adminSecret())
 
 	resp2, err := http.DefaultClient.Do(req)
@@ -201,10 +203,9 @@ func TestBlocksEndpoint(t *testing.T) {
 }
 
 func TestNodeHealthEndpoint(t *testing.T) {
-	req, _ := http.NewRequest("GET", adminURL()+"/health/nodes", nil)
-	req.Header.Set("X-Admin-Secret", adminSecret())
-
-	resp, err := http.DefaultClient.Do(req)
+	// /health/nodes lives on the gateway, not the admin service
+	url := strings.TrimSuffix(gatewayURL(), "/v1/") + "/health/nodes"
+	resp, err := http.Get(url)
 	if err != nil {
 		t.Fatalf("request failed: %v", err)
 	}
@@ -241,31 +242,38 @@ func TestCreateTenantValidation(t *testing.T) {
 }
 
 func TestDeleteTenant(t *testing.T) {
-	apiKey := createTestTenant(t)
+	// Create a tenant and capture its ID directly
+	payload := map[string]any{
+		"name":        fmt.Sprintf("Delete Tenant %d", time.Now().UnixNano()),
+		"quota_rpm":   100,
+		"quota_rps":   10,
+		"quota_daily": 10000,
+		"plan":        "free",
+	}
+	body, _ := json.Marshal(payload)
 
-	// First, list tenants to find the ID
-	req, _ := http.NewRequest("GET", adminURL()+"/tenants", nil)
+	req, _ := http.NewRequest("POST", adminURL()+"/tenants", bytes.NewReader(body))
 	req.Header.Set("X-Admin-Secret", adminSecret())
+	req.Header.Set("Content-Type", "application/json")
 
 	resp, err := http.DefaultClient.Do(req)
 	if err != nil {
-		t.Fatalf("list tenants failed: %v", err)
+		t.Fatalf("create tenant request failed: %v", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusCreated {
+		t.Fatalf("expected 201 creating tenant, got %d", resp.StatusCode)
 	}
 
-	var tenants []map[string]any
-	json.NewDecoder(resp.Body).Decode(&tenants)
-	resp.Body.Close()
-
-	var tenantID string
-	for _, tenant := range tenants {
-		if tenant["api_key"] == apiKey {
-			tenantID = tenant["id"].(string)
-			break
-		}
+	var result map[string]any
+	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+		t.Fatalf("decode tenant response: %v", err)
 	}
 
-	if tenantID == "" {
-		t.Fatal("could not find created tenant to delete")
+	tenantID, ok := result["id"].(string)
+	if !ok || tenantID == "" {
+		t.Fatal("expected id in create response")
 	}
 
 	// Delete the tenant

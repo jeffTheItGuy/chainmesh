@@ -8,7 +8,7 @@ Unit tests verify individual functions, packages, and components in isolation. T
 
 1. [Go Backend](#go-backend)
 2. [Frontend](#frontend)
-3. [Coverage Targets](#coverage-targets)
+3. [Critical Path Checklist](#critical-path-checklist)
 
 ---
 
@@ -41,20 +41,20 @@ go tool cover -html=coverage.out
 go test -v ./gateway/middleware/...
 ```
 
-### Current Coverage by Package
+### Package Test Strategy
 
-| Package | Coverage | What to Test | Mock Strategy |
-|---------|----------|-------------|---------------|
-| `gateway/middleware` | 77.6% | Auth, rate limiting, request ID | Mock Redis and Postgres pools |
-| `shared/blockchain` | 92.4% | Health checks, endpoint selection | Mock HTTP transport |
-| `shared/util` | 59.2% | SSRF validation | Pure functions, no mocks needed |
-| `shared/storage/postgres` | 68.0% | Queries, transactions | Use `pgxmock` or testcontainers |
-| `admin` | 47.8% | Admin auth, audit logging | Mock DB; fix `inet` scan target |
-| `gateway/proxy` | 90.5% | Request parsing, cache logic, routing | Mock `blockchain.Client` and Redis |
-| `shared/storage/redis` | 74.1% | Rate limit Lua script, cache ops | Use `miniredis` or mock client |
-| `shared/telemetry` | 69.1% | Async enqueue, retry logic | Mock DB with buffered channel |
-| `gateway` | 46.3% | Config reload, health loop | Mock DB and blockchain client |
-| `ingestor` | 30.3% | Block parsing edge cases | Mock RPC responses with malformed blocks |
+| Package | What to Test | Mock Strategy |
+|---------|-------------|---------------|
+| `gateway/middleware` | Auth, rate limiting, request ID | Mock Redis and Postgres pools |
+| `shared/blockchain` | Health checks, endpoint selection | Mock HTTP transport |
+| `shared/util` | SSRF validation | Pure functions, no mocks needed |
+| `shared/storage/postgres` | Queries, transactions | Use `pgxmock` or testcontainers |
+| `admin` | Admin auth, audit logging | Mock DB; fix `inet` scan target |
+| `gateway/proxy` | Request parsing, cache logic, routing | Mock `blockchain.Client` and Redis |
+| `shared/storage/redis` | Rate limit Lua script, cache ops | Use `miniredis` or mock client |
+| `shared/telemetry` | Async enqueue, retry logic | Mock DB with buffered channel |
+| `gateway` | Config reload, health loop | Mock DB and blockchain client |
+| `ingestor` | Block parsing edge cases | Mock RPC responses with malformed blocks |
 
 ### Untested Packages
 
@@ -250,18 +250,11 @@ describe('TenantsSection', () => {
 
 ---
 
-## Coverage Targets
+## Critical Path Checklist
 
-> **Peak state snapshot (2026-08-26).** This is the definitive unit-test suite. Numbers below reflect the locked, passing state.
+Instead of tracking arbitrary coverage percentages, we track whether the areas that actually matter have dedicated tests and whether those tests pass.
 
-| Layer | Target | Peak Status |
-|-------|--------|-------------|
-| Go critical paths (auth, proxy, rate limit) | ≥ 80% | `gateway/proxy` 90.5% ✅, `shared/blockchain` 92.4% ✅, `gateway/middleware` 77.6% ⏳ |
-| Go other packages | ≥ 60% | `shared/storage/redis` 74.1% ✅, `shared/telemetry` 69.1% ✅, `shared/storage/postgres` 68.0% ✅, `shared/util` 59.2% ⏳ |
-| Frontend API client, auth, hooks | ≥ 75% | `auth.ts` 84.0% ✅, `ToastProvider` 100% ✅, `api.ts` 39.0% ❌ |
-| Frontend complex forms & role gating | ≥ 60% | `TenantsSection` 30.8% ❌ |
-
-> **Reality check (2026-08-26):** `gateway/proxy` reached 90.5%, `shared/storage/redis` 74.1%, `shared/telemetry` 69.1%, and `shared/blockchain` 92.4%. The remaining gaps (`gateway/middleware` at 77.6% and `shared/util` at 59.2%) are accepted as the peak. Frontend holds at 8 passing tests with `auth.ts` and `ToastProvider` meeting targets. This is the locked state.
+For the definitive status of tested areas and known gaps, see the **[Critical Path Checklist in RESULTS.md](RESULTS.md#critical-path-checklist)**.
 
 ---
 

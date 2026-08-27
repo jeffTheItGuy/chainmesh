@@ -5,18 +5,20 @@ package integration
 import (
 	"encoding/json"
 	"net/http"
+	"strings"
 	"testing"
 )
 
 func TestGatewayHealth(t *testing.T) {
-	resp, err := http.Get(gatewayURL())
+	// /health/nodes is the gateway's health/status endpoint
+	url := strings.TrimSuffix(gatewayURL(), "/v1/") + "/health/nodes"
+	resp, err := http.Get(url)
 	if err != nil {
 		t.Fatalf("gateway health request failed: %v", err)
 	}
 	defer resp.Body.Close()
 
-	// Gateway root may return 404 or a health response depending on config
-	// We just verify it responds
+	// We just verify it responds (200 with node health, or 404 if not configured)
 	if resp.StatusCode != http.StatusOK && resp.StatusCode != http.StatusNotFound {
 		t.Fatalf("unexpected status: %d", resp.StatusCode)
 	}
