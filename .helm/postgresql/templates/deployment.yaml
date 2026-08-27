@@ -24,6 +24,7 @@ spec:
           imagePullPolicy: {{ .Values.image.pullPolicy }}
           securityContext:
             allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
             capabilities:
               drop: ["ALL"]
           ports:
@@ -49,6 +50,8 @@ spec:
               mountPath: /var/lib/postgresql/data
             - name: tmp
               mountPath: /tmp
+            - name: run
+              mountPath: /var/run/postgresql
           resources: {{ toYaml .Values.resources | nindent 12 }}
           readinessProbe:
             exec:
@@ -69,4 +72,6 @@ spec:
           persistentVolumeClaim:
             claimName: chainmesh-postgresql-pvc
         - name: tmp
+          emptyDir: {}
+        - name: run
           emptyDir: {}
