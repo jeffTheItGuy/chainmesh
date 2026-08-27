@@ -7,7 +7,9 @@ COPY ./backend .
 RUN CGO_ENABLED=0 GOOS=linux go build -o /bin/gateway ./gateway
 
 FROM alpine:3.20
+RUN addgroup -S appgroup && adduser -S appuser -G appgroup
 COPY --from=build /etc/ssl/certs/ca-certificates.crt /etc/ssl/certs/
 COPY --from=build /bin/gateway /usr/local/bin/gateway
+USER appuser
 EXPOSE 8080
 ENTRYPOINT ["/usr/local/bin/gateway"]

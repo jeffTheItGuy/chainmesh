@@ -1,12 +1,12 @@
-name: Gateway Deploy
+name: Admin Deploy
 on:
   workflow_dispatch:
 env:
   NAMESPACE: chainmesh
-  DOMAIN: api.chainmesh.nimbusurf.com
-  RELEASE_NAME: gateway-release
-  DEPLOYMENT_NAME: chainmesh-gateway
-  SERVICE_PORT: 8080
+  DOMAIN: admin.chainmesh.nimbusurf.com
+  RELEASE_NAME: admin-release
+  DEPLOYMENT_NAME: chainmesh-admin
+  SERVICE_PORT: 8081
 jobs:
   deploy:
     runs-on: ubuntu-latest
@@ -23,17 +23,17 @@ jobs:
         env:
           REMOTE_SERVER: ${{ secrets.REMOTE_SERVER }}
           REMOTE_USER: ${{ secrets.REMOTE_USER }}
-          REMOTE_WORKSPACE: ${{ secrets.REMOTE_DEPLOY_DIR }}/gateway-${{ github.run_id }}
+          REMOTE_WORKSPACE: ${{ secrets.REMOTE_DEPLOY_DIR }}/admin-${{ github.run_id }}
         run: |
           ssh -o StrictHostKeyChecking=yes "$REMOTE_USER@$REMOTE_SERVER" "rm -rf $REMOTE_WORKSPACE && mkdir -p $REMOTE_WORKSPACE/.helm && mkdir -p $REMOTE_WORKSPACE/backend && mkdir -p $REMOTE_WORKSPACE/.docker/prod"
-          scp -o StrictHostKeyChecking=yes -r .helm/gateway "$REMOTE_USER@$REMOTE_SERVER:$REMOTE_WORKSPACE/.helm/"
+          scp -o StrictHostKeyChecking=yes -r .helm/admin "$REMOTE_USER@$REMOTE_SERVER:$REMOTE_WORKSPACE/.helm/"
           scp -o StrictHostKeyChecking=yes -r backend/* "$REMOTE_USER@$REMOTE_SERVER:$REMOTE_WORKSPACE/backend/"
-          scp -o StrictHostKeyChecking=yes .docker/prod/prod-gateway.Dockerfile "$REMOTE_USER@$REMOTE_SERVER:$REMOTE_WORKSPACE/.docker/prod/"
+          scp -o StrictHostKeyChecking=yes .docker/prod/prod-admin.Dockerfile "$REMOTE_USER@$REMOTE_SERVER:$REMOTE_WORKSPACE/.docker/prod/"
       - name: Build and Deploy on Remote Server
         env:
           REMOTE_SERVER: ${{ secrets.REMOTE_SERVER }}
           REMOTE_USER: ${{ secrets.REMOTE_USER }}
-          REMOTE_WORKSPACE: ${{ secrets.REMOTE_DEPLOY_DIR }}/gateway-${{ github.run_id }}
+          REMOTE_WORKSPACE: ${{ secrets.REMOTE_DEPLOY_DIR }}/admin-${{ github.run_id }}
           BUILD_ID: ${{ github.run_id }}-${{ github.run_number }}
           RESTART_REASON: "github-actions-deploy"
         run: |
@@ -52,16 +52,16 @@ jobs:
           cd "$REMOTE_WORKSPACE"
           docker system prune -f
           docker builder prune -f
-          docker build --no-cache -f .docker/prod/prod-gateway.Dockerfile -t chainmesh-gateway:$BUILD_ID .
-          docker save chainmesh-gateway:$BUILD_ID | k3s ctr images import -
+          docker build --no-cache -f .docker/prod/prod-admin.Dockerfile -t chainmesh-admin:$BUILD_ID .
+          docker save chainmesh-admin:$BUILD_ID | k3s ctr images import -
           TIMESTAMP=$(date +%s)
-          helm upgrade --install $RELEASE_NAME .helm/gateway \
+          helm upgrade --install $RELEASE_NAME .helm/admin \
             --namespace "$NAMESPACE" \
             --set namespace="$NAMESPACE" \
             --set ingress.host="${DOMAIN}" \
             --set restartTimestamp="$TIMESTAMP" \
             --set restartReason="$RESTART_REASON" \
-            --set image.repository="chainmesh-gateway" \
+            --set image.repository="chainmesh-admin" \
             --set image.tag="$BUILD_ID" \
             --set image.pullPolicy="Never" \
             --timeout=600s
@@ -70,4 +70,4 @@ jobs:
       - name: Cleanup Remote Workspace
         if: always()
         run: |
-          ssh -o StrictHostKeyChecking=yes "${{ secrets.REMOTE_USER }}@${{ secrets.REMOTE_SERVER }}" "rm -rf ${{ secrets.REMOTE_DEPLOY_DIR }}/gateway-${{ github.run_id }}"
+          ssh -o StrictHostKeyChecking=yes "${{ secrets.REMOTE_USER }}@${{ secrets.REMOTE_SERVER }}" "rm -rf ${{ secrets.REMOTE_DEPLOY_DIR }}/admin-${{ github.run_id }}"
