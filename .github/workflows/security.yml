@@ -1,32 +1,114 @@
+# .github/workflows/security.yml
+# Free security scanning for a PUBLIC repo.
+# Complements the native GitHub features you enable in the UI
+# (Dependabot, Secret Scanning, CodeQL). This file covers the gaps:
+# Go reachability analysis, dependency CVEs, and IaC misconfigurations.
+#
+# Tuning: every Trivy step uses exit-code '1' (fails the PR on findings).
+# While you're triaging existing issues, set exit-code to '0' on any step
+# to make it report-only, then flip it back to '1' to enforce.
+
 name: Security Scan
 
 on:
-  pull_request:
-    branches: [ "main" ]
   push:
     branches: [ "main" ]
+  pull_request:
+    branches: [ "main" ]
+  schedule:
+    - cron: '0 6 * * 1'   # Weekly Monday 06:00 UTC
 
 jobs:
-  go-vuln-check:
+  # ──────────────────────────────────────────────────────────────────────
+  # 1. Go vulnerability REACHABILITY check
+  #    Unlike Dependabot (which flags any vulnerable library you import),
+  #    govulncheck compiles your code and only reports vulns you actually CALL.
+  # ──────────────────────────────────────────────────────────────────────
+  govulncheck:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+
       - uses: actions/setup-go@v5
         with:
-          go-version: '1.23' # Match your go.mod
-      - name: Run govulncheck
-        working-directory: ./backend
-        run: |
-          go install golang.org/x/vuln/cmd/govulncheck@latest
-          govulncheck ./...
+          go-version-file: backend/go.mod
 
-  dockerfile-scan:
+      - name: Install govulncheck
+        run: go install golang.org/x/vuln/cmd/govulncheck@latest
+
+      - name: Run govulncheck
+        working-directory: backend
+        run: govulncheck ./...
+
+  # ──────────────────────────────────────────────────────────────────────
+  # 2. Dependency CVE scan (Go + JavaScript)
+  #    Trivy reads go.mod/go.sum and package.json/package-lock.json and
+  #    reports known CVEs in third-party libraries.
+  # ──────────────────────────────────────────────────────────────────────
+  dependency-scan:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - name: Run Trivy on Dockerfiles
+
+      - name: Scan backend Go dependencies
+        uses: aquasecurity/trivy-action@master
+        with:
+          scan-type: 'fs'
+          scan-ref: 'backend'
+          severity: 'CRITICAL,HIGH'
+          exit-code: '1'
+
+      # NOTE: your deploy workflows reference the frontend as `web/`.
+      # If your directory is actually named `frontend/`, change scan-ref below.
+      - name: Scan web JS dependencies
+        uses: aquasecurity/trivy-action@master
+        with:
+          scan-type: 'fs'
+          scan-ref: 'web'
+          severity: 'CRITICAL,HIGH'
+          exit-code: '1'
+
+  # ──────────────────────────────────────────────────────────────────────
+  # 3. IaC misconfiguration scan (Dockerfiles + Helm charts)
+  #    Catches bad build/deploy hygiene: containers running as root,
+  #    unpinned base images, missing resource limits, privileged pods, etc.
+  # ──────────────────────────────────────────────────────────────────────
+  iac-scan:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      # Production deploy Dockerfiles (referenced by gateway-deploy.yml / web-deploy.yml)
+      - name: Scan gateway Dockerfile
         uses: aquasecurity/trivy-action@master
         with:
           scan-type: 'config'
-          scan-ref: './backend/gateway/Dockerfile' # Add your other Dockerfiles here
+          scan-ref: 'backend/gateway/Dockerfile'
           severity: 'CRITICAL,HIGH'
+          exit-code: '1'
+
+      - name: Scan web Dockerfile
+        uses: aquasecurity/trivy-action@master
+        with:
+          scan-type: 'config'
+          scan-ref: 'web/Dockerfile'
+          severity: 'CRITICAL,HIGH'
+          exit-code: '1'
+
+      # Test/prod Dockerfiles under .docker/ (used by docker-compose.* files)
+      - name: Scan .docker directory
+        uses: aquasecurity/trivy-action@master
+        with:
+          scan-type: 'config'
+          scan-ref: '.docker'
+          severity: 'CRITICAL,HIGH'
+          exit-code: '1'
+
+      # Helm charts — the highest-value scan for your k3s deployment
+      - name: Scan Helm charts
+        uses: aquasecurity/trivy-action@master
+        with:
+          scan-type: 'config'
+          scan-ref: '.helm'
+          severity: 'CRITICAL,HIGH'
+          exit-code: '1'
