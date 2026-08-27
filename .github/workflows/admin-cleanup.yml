@@ -1,34 +1,67 @@
 name: Admin Cleanup
+
 on:
   workflow_dispatch:
+
+permissions: {}
+
 env:
   NAMESPACE: chainmesh
   RELEASE_NAME: admin-release
   DEPLOYMENT_NAME: chainmesh-admin
+
 jobs:
   cleanup:
     runs-on: ubuntu-latest
+
     steps:
       - name: Setup SSH
         env:
+          REMOTE_SSH: ${{ secrets.REMOTE_SSH }}
           REMOTE_SERVER: ${{ secrets.REMOTE_SERVER }}
         run: |
-          mkdir -p ~/.ssh && chmod 700 ~/.ssh
-          echo "${{ secrets.SSH_PRIVATE_KEY }}" > ~/.ssh/id_rsa && chmod 600 ~/.ssh/id_rsa
+          set -euo pipefail
+
+          if [ -z "${REMOTE_SSH:-}" ]; then
+            echo "REMOTE_SSH secret is missing." >&2
+            exit 1
+          fi
+
+          if [ -z "${REMOTE_SERVER:-}" ]; then
+            echo "REMOTE_SERVER secret is missing." >&2
+            exit 1
+          fi
+
+          mkdir -p ~/.ssh
+          chmod 700 ~/.ssh
+
+          printf '%s\n' "$REMOTE_SSH" | tr -d '\r' > ~/.ssh/id_rsa
+          chmod 600 ~/.ssh/id_rsa
+
           ssh-keyscan -H "$REMOTE_SERVER" >> ~/.ssh/known_hosts 2>/dev/null || true
+          chmod 644 ~/.ssh/known_hosts
+
       - name: Cleanup Helm Release and Resources
         env:
           REMOTE_SERVER: ${{ secrets.REMOTE_SERVER }}
           REMOTE_USER: ${{ secrets.REMOTE_USER }}
         run: |
-          ssh -o StrictHostKeyChecking=yes "$REMOTE_USER@$REMOTE_SERVER" \
-            NAMESPACE="${{ env.NAMESPACE }}" \
-            RELEASE_NAME="${{ env.RELEASE_NAME }}" \
-            DEPLOYMENT_NAME="${{ env.DEPLOYMENT_NAME }}" \
+          set -euo pipefail
+
+          : "${REMOTE_SERVER:?REMOTE_SERVER secret is missing}"
+          : "${REMOTE_USER:?REMOTE_USER secret is missing}"
+
+          ssh -o BatchMode=yes -o StrictHostKeyChecking=yes "$REMOTE_USER@$REMOTE_SERVER" \
+            NAMESPACE="$NAMESPACE" \
+            RELEASE_NAME="$RELEASE_NAME" \
+            DEPLOYMENT_NAME="$DEPLOYMENT_NAME" \
             bash << 'ENDSSH'
-          set -e
+          set -euo pipefail
+
           export KUBECONFIG=/etc/rancher/k3s/k3s.yaml
-          helm uninstall $RELEASE_NAME -n $NAMESPACE 2>/dev/null || echo "⚠️  Release not found"
+
+          helm uninstall "$RELEASE_NAME" -n "$NAMESPACE" 2>/dev/null || echo "⚠️ Release not found"
+
           docker rmi chainmesh-admin:latest 2>/dev/null || true
           k3s ctr images rm docker.io/library/chainmesh-admin:latest 2>/dev/null || true
           ENDSSH

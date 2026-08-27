@@ -2,30 +2,44 @@ name: Security Scan
 
 on:
   push:
-    branches: [ "main" ]
+    branches:
+      - main
   pull_request:
-    branches: [ "main" ]
+    branches:
+      - main
   schedule:
     - cron: '0 6 * * 1'
+
+permissions:
+  contents: read
 
 jobs:
   govulncheck:
     runs-on: ubuntu-latest
+
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-go@v5
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Go
+        uses: actions/setup-go@v5
         with:
           go-version-file: backend/go.mod
+
       - name: Install govulncheck
         run: go install golang.org/x/vuln/cmd/govulncheck@latest
+
       - name: Run govulncheck
         working-directory: backend
         run: govulncheck ./...
 
   dependency-scan:
     runs-on: ubuntu-latest
+
     steps:
-      - uses: actions/checkout@v4
+      - name: Checkout
+        uses: actions/checkout@v4
+
       - name: Scan backend Go dependencies
         uses: aquasecurity/trivy-action@master
         with:
@@ -33,6 +47,7 @@ jobs:
           scan-ref: 'backend'
           severity: 'CRITICAL,HIGH'
           exit-code: '1'
+
       - name: Scan web JS dependencies
         uses: aquasecurity/trivy-action@master
         with:
@@ -43,10 +58,11 @@ jobs:
 
   iac-scan:
     runs-on: ubuntu-latest
+
     steps:
-      - uses: actions/checkout@v4
-      
-      # Scan production Dockerfiles
+      - name: Checkout
+        uses: actions/checkout@v4
+
       - name: Scan prod-gateway Dockerfile
         uses: aquasecurity/trivy-action@master
         with:
@@ -54,7 +70,7 @@ jobs:
           scan-ref: '.docker/prod/prod-gateway.Dockerfile'
           severity: 'CRITICAL,HIGH'
           exit-code: '1'
-      
+
       - name: Scan prod-admin Dockerfile
         uses: aquasecurity/trivy-action@master
         with:
@@ -62,8 +78,7 @@ jobs:
           scan-ref: '.docker/prod/prod-admin.Dockerfile'
           severity: 'CRITICAL,HIGH'
           exit-code: '1'
-      
-      # Scan test Dockerfile
+
       - name: Scan test Dockerfile
         uses: aquasecurity/trivy-action@master
         with:
@@ -71,8 +86,7 @@ jobs:
           scan-ref: '.docker/test/test.Dockerfile'
           severity: 'CRITICAL,HIGH'
           exit-code: '1'
-      
-      # Scan Helm charts
+
       - name: Scan Helm charts
         uses: aquasecurity/trivy-action@master
         with:

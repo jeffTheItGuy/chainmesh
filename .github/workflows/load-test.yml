@@ -1,7 +1,10 @@
 name: Load Test (in-cluster)
 
 on:
-  workflow_dispatch:   # manual only — no schedule
+  workflow_dispatch:
+
+permissions:
+  contents: read
 
 env:
   NAMESPACE: chainmesh
@@ -9,24 +12,51 @@ env:
 jobs:
   load:
     runs-on: ubuntu-latest
+
     steps:
-      - uses: actions/checkout@v4
+      - name: Checkout
+        uses: actions/checkout@v4
 
       - name: Setup SSH
         env:
+          REMOTE_SSH: ${{ secrets.REMOTE_SSH }}
           REMOTE_SERVER: ${{ secrets.REMOTE_SERVER }}
         run: |
-          mkdir -p ~/.ssh && chmod 700 ~/.ssh
-          echo "${{ secrets.SSH_PRIVATE_KEY }}" > ~/.ssh/id_rsa && chmod 600 ~/.ssh/id_rsa
+          set -euo pipefail
+
+          if [ -z "${REMOTE_SSH:-}" ]; then
+            echo "REMOTE_SSH secret is missing." >&2
+            exit 1
+          fi
+
+          if [ -z "${REMOTE_SERVER:-}" ]; then
+            echo "REMOTE_SERVER secret is missing." >&2
+            exit 1
+          fi
+
+          mkdir -p ~/.ssh
+          chmod 700 ~/.ssh
+
+          printf '%s\n' "$REMOTE_SSH" | tr -d '\r' > ~/.ssh/id_rsa
+          chmod 600 ~/.ssh/id_rsa
+
           ssh-keyscan -H "$REMOTE_SERVER" >> ~/.ssh/known_hosts 2>/dev/null || true
+          chmod 644 ~/.ssh/known_hosts
 
       - name: Copy k6 script to k3s node
         env:
           REMOTE_SERVER: ${{ secrets.REMOTE_SERVER }}
           REMOTE_USER: ${{ secrets.REMOTE_USER }}
         run: |
-          ssh -o StrictHostKeyChecking=yes "$REMOTE_USER@$REMOTE_SERVER" "mkdir -p /tmp/chainmesh-load"
-          scp -o StrictHostKeyChecking=yes tests/load/gateway_load.js \
+          set -euo pipefail
+
+          : "${REMOTE_SERVER:?REMOTE_SERVER secret is missing}"
+          : "${REMOTE_USER:?REMOTE_USER secret is missing}"
+
+          ssh -o BatchMode=yes -o StrictHostKeyChecking=yes "$REMOTE_USER@$REMOTE_SERVER" \
+            "mkdir -p /tmp/chainmesh-load"
+
+          scp -o BatchMode=yes -o StrictHostKeyChecking=yes tests/load/gateway_load.js \
             "$REMOTE_USER@$REMOTE_SERVER:/tmp/chainmesh-load/gateway_load.js"
 
       - name: Install k6 and run load test inside k3s
@@ -35,16 +65,22 @@ jobs:
         env:
           REMOTE_SERVER: ${{ secrets.REMOTE_SERVER }}
           REMOTE_USER: ${{ secrets.REMOTE_USER }}
+          TEST_API_KEY: ${{ secrets.PROD_TEST_API_KEY }}
         run: |
-          ssh -o StrictHostKeyChecking=yes "$REMOTE_USER@$REMOTE_SERVER" \
-            NAMESPACE="${{ env.NAMESPACE }}" \
-            TEST_API_KEY="${{ secrets.PROD_TEST_API_KEY }}" \
+          set -euo pipefail
+
+          : "${REMOTE_SERVER:?REMOTE_SERVER secret is missing}"
+          : "${REMOTE_USER:?REMOTE_USER secret is missing}"
+          : "${TEST_API_KEY:?PROD_TEST_API_KEY secret is missing}"
+
+          ssh -o BatchMode=yes -o StrictHostKeyChecking=yes "$REMOTE_USER@$REMOTE_SERVER" \
+            NAMESPACE="$NAMESPACE" \
+            TEST_API_KEY="$TEST_API_KEY" \
             bash << 'ENDSSH'
-          set -e
-          set -o pipefail
+          set -euo pipefail
+
           export KUBECONFIG=/etc/rancher/k3s/k3s.yaml
 
-          # Install k6 to /tmp (no root needed, distro-agnostic)
           if [ ! -x /tmp/k6 ]; then
             curl -fsSL https://github.com/grafana/k6/releases/download/v0.54.0/k6-v0.54.0-linux-amd64.tar.gz -o /tmp/k6.tgz
             tar -xzf /tmp/k6.tgz -C /tmp
@@ -52,11 +88,12 @@ jobs:
             chmod +x /tmp/k6
           fi
 
-          # Resolve gateway ClusterIP (no DNS / Cloudflare)
           GW_SVC=$(kubectl get svc -n "$NAMESPACE" -o name | grep -i gateway | head -1 | sed 's|service/||')
           GW_IP=$(kubectl get svc "$GW_SVC" -n "$NAMESPACE" -o jsonpath='{.spec.clusterIP}')
           GW_PORT=$(kubectl get svc "$GW_SVC" -n "$NAMESPACE" -o jsonpath='{.spec.ports[0].port}')
+
           GATEWAY_URL="http://${GW_IP}:${GW_PORT}/v1/"
+
           echo "Load-testing: $GATEWAY_URL"
 
           /tmp/k6 run \
@@ -71,7 +108,9 @@ jobs:
           REMOTE_SERVER: ${{ secrets.REMOTE_SERVER }}
           REMOTE_USER: ${{ secrets.REMOTE_USER }}
         run: |
-          scp -o StrictHostKeyChecking=yes \
+          set -euo pipefail
+
+          scp -o BatchMode=yes -o StrictHostKeyChecking=yes \
             "$REMOTE_USER@$REMOTE_SERVER:/tmp/chainmesh-load/results.txt" ./load-results.txt \
             || echo "::warning::Could not fetch load results"
 
