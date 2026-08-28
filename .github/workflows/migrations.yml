@@ -54,47 +54,46 @@ jobs:
             REMOTE_WORKSPACE="$REMOTE_WORKSPACE" \
             NAMESPACE="$NAMESPACE" \
             bash << 'ENDSSH'
-            set -euo pipefail
-            export KUBECONFIG=/etc/rancher/k3s/k3s.yaml
+          set -euo pipefail
+          export KUBECONFIG=/etc/rancher/k3s/k3s.yaml
 
-            # Install migrate CLI if not already present
-            if ! command -v migrate >/dev/null 2>&1; then
-              curl -fsSL https://github.com/golang-migrate/migrate/releases/download/v4.18.1/migrate.linux-amd64.tar.gz -o /tmp/migrate.tar.gz
-              tar -xzf /tmp/migrate.tar.gz -C /tmp
-              install -m 0755 /tmp/migrate /usr/local/bin/migrate
-            fi
+          MIGRATE="$HOME/bin/migrate"
+          if [ ! -x "$MIGRATE" ]; then
+            mkdir -p "$HOME/bin"
+            curl -fsSL https://github.com/golang-migrate/migrate/releases/download/v4.18.1/migrate.linux-amd64.tar.gz -o /tmp/migrate.tar.gz
+            tar -xzf /tmp/migrate.tar.gz -C /tmp
+            mv /tmp/migrate "$MIGRATE"
+            chmod +x "$MIGRATE"
+          fi
 
-            # URL-encode credentials (same bug class you already hit)
-            urlencode() {
-              local s="$1" out="" c i
-              for ((i=0; i<${#s}; i++)); do
-                c="${s:$i:1}"
-                case "$c" in
-                  [a-zA-Z0-9.~_-]) out+="$c" ;;
-                  *) out+="$(printf '%%%02X' "'$c")" ;;
-                esac
-              done
-              printf '%s' "$out"
-            }
+          urlencode() {
+            local s="$1" out="" c i
+            for ((i=0; i<${#s}; i++)); do
+              c="${s:$i:1}"
+              case "$c" in
+                [a-zA-Z0-9.~_-]) out+="$c" ;;
+                *) out+="$(printf '%%%02X' "'$c")" ;;
+              esac
+            done
+            printf '%s' "$out"
+          }
 
-            DB_USER=$(kubectl get secret chainmesh-secrets -n "$NAMESPACE" -o jsonpath='{.data.DATABASE_USER}' | base64 -d)
-            DB_PASS=$(kubectl get secret chainmesh-secrets -n "$NAMESPACE" -o jsonpath='{.data.DATABASE_PASSWORD}' | base64 -d)
-            DB_USER_ENC="$(urlencode "$DB_USER")"
-            DB_PASS_ENC="$(urlencode "$DB_PASS")"
+          DB_USER=$(kubectl get secret chainmesh-secrets -n "$NAMESPACE" -o jsonpath='{.data.DATABASE_USER}' | base64 -d)
+          DB_PASS=$(kubectl get secret chainmesh-secrets -n "$NAMESPACE" -o jsonpath='{.data.DATABASE_PASSWORD}' | base64 -d)
+          DB_USER_ENC="$(urlencode "$DB_USER")"
+          DB_PASS_ENC="$(urlencode "$DB_PASS")"
 
-            # Make sure Postgres is up before migrating
-            kubectl wait --for=condition=available --timeout=300s deployment/chainmesh-postgresql -n "$NAMESPACE"
+          kubectl wait --for=condition=available --timeout=300s deployment/chainmesh-postgresql -n "$NAMESPACE"
 
-            # Port-forward Postgres so the host can reach the cluster-internal service
-            kubectl port-forward svc/chainmesh-postgresql-svc 15432:5432 -n "$NAMESPACE" >/dev/null 2>&1 &
-            PF_PID=$!
-            sleep 3
+          kubectl port-forward svc/chainmesh-postgresql-svc 15432:5432 -n "$NAMESPACE" >/dev/null 2>&1 &
+          PF_PID=$!
+          sleep 3
 
-            migrate -path "$REMOTE_WORKSPACE/backend/database/migrations" \
-              -database "postgres://${DB_USER_ENC}:${DB_PASS_ENC}@localhost:15432/chainmesh?sslmode=disable" up
+          "$MIGRATE" -path "$REMOTE_WORKSPACE/backend/database/migrations" \
+            -database "postgres://${DB_USER_ENC}:${DB_PASS_ENC}@localhost:15432/chainmesh?sslmode=disable" up
 
-            kill "$PF_PID" 2>/dev/null || true
-            ENDSSH
+          kill "$PF_PID" 2>/dev/null || true
+          ENDSSH
 
       - name: Cleanup Remote Workspace
         if: always()
