@@ -13,7 +13,6 @@ env:
 jobs:
   cleanup:
     runs-on: ubuntu-latest
-
     steps:
       - name: Setup SSH
         env:
@@ -21,23 +20,18 @@ jobs:
           REMOTE_SERVER: ${{ secrets.REMOTE_SERVER }}
         run: |
           set -euo pipefail
-
           if [ -z "${REMOTE_SSH:-}" ]; then
             echo "REMOTE_SSH secret is missing." >&2
             exit 1
           fi
-
           if [ -z "${REMOTE_SERVER:-}" ]; then
             echo "REMOTE_SERVER secret is missing." >&2
             exit 1
           fi
-
           mkdir -p ~/.ssh
           chmod 700 ~/.ssh
-
           printf '%s\n' "$REMOTE_SSH" | tr -d '\r' > ~/.ssh/id_rsa
           chmod 600 ~/.ssh/id_rsa
-
           ssh-keyscan -H "$REMOTE_SERVER" >> ~/.ssh/known_hosts 2>/dev/null || true
           chmod 644 ~/.ssh/known_hosts
 
@@ -47,21 +41,16 @@ jobs:
           REMOTE_USER: ${{ secrets.REMOTE_USER }}
         run: |
           set -euo pipefail
-
           : "${REMOTE_SERVER:?REMOTE_SERVER secret is missing}"
           : "${REMOTE_USER:?REMOTE_USER secret is missing}"
-
           ssh -o BatchMode=yes -o StrictHostKeyChecking=yes "$REMOTE_USER@$REMOTE_SERVER" \
             NAMESPACE="$NAMESPACE" \
             RELEASE_NAME="$RELEASE_NAME" \
             DEPLOYMENT_NAME="$DEPLOYMENT_NAME" \
             bash << 'ENDSSH'
           set -euo pipefail
-
           export KUBECONFIG=/etc/rancher/k3s/k3s.yaml
-
           helm uninstall "$RELEASE_NAME" -n "$NAMESPACE" 2>/dev/null || echo "⚠️ Release not found"
-
           docker rmi chainmesh-web:latest 2>/dev/null || true
           k3s ctr images rm docker.io/library/chainmesh-web:latest 2>/dev/null || true
           ENDSSH
