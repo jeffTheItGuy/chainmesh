@@ -44,13 +44,13 @@ networkPolicy:
       port: 6379
 probes:
   readiness:
-    path: "/"
+    path: "/health"
     initialDelaySeconds: 15
     periodSeconds: 10
     timeoutSeconds: 5
     failureThreshold: 3
   liveness:
-    path: "/"
+    path: "/health"
     initialDelaySeconds: 30
     periodSeconds: 30
     timeoutSeconds: 10
