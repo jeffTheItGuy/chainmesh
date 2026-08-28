@@ -1,0 +1,107 @@
+name: Ingestor Deploy
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  NAMESPACE: chainmesh
+  RELEASE_NAME: ingestor-release
+  DEPLOYMENT_NAME: chainmesh-ingestor
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup SSH
+        env:
+          REMOTE_SSH: ${{ secrets.REMOTE_SSH }}
+          REMOTE_SERVER: ${{ secrets.REMOTE_SERVER }}
+        run: |
+          set -euo pipefail
+          if [ -z "${REMOTE_SSH:-}" ]; then
+            echo "REMOTE_SSH secret is missing." >&2
+            exit 1
+          fi
+          mkdir -p ~/.ssh
+          chmod 700 ~/.ssh
+          printf '%s\n' "$REMOTE_SSH" | tr -d '\r' > ~/.ssh/id_rsa
+          chmod 600 ~/.ssh/id_rsa
+          ssh-keyscan -H "$REMOTE_SERVER" >> ~/.ssh/known_hosts 2>/dev/null || true
+          chmod 644 ~/.ssh/known_hosts
+
+      - name: Copy Files to Remote
+        env:
+          REMOTE_SERVER: ${{ secrets.REMOTE_SERVER }}
+          REMOTE_USER: ${{ secrets.REMOTE_USER }}
+          REMOTE_WORKSPACE: ${{ secrets.REMOTE_DEPLOY_DIR }}/ingestor-${{ github.run_id }}
+        run: |
+          set -euo pipefail
+          ssh -o BatchMode=yes -o StrictHostKeyChecking=yes "$REMOTE_USER@$REMOTE_SERVER" \
+            "rm -rf '$REMOTE_WORKSPACE' && mkdir -p '$REMOTE_WORKSPACE/.helm' '$REMOTE_WORKSPACE/backend' '$REMOTE_WORKSPACE/.docker/prod'"
+          scp -o BatchMode=yes -o StrictHostKeyChecking=yes -r .helm/ingestor \
+            "$REMOTE_USER@$REMOTE_SERVER:$REMOTE_WORKSPACE/.helm/"
+          scp -o BatchMode=yes -o StrictHostKeyChecking=yes -r backend/* \
+            "$REMOTE_USER@$REMOTE_SERVER:$REMOTE_WORKSPACE/backend/"
+          scp -o BatchMode=yes -o StrictHostKeyChecking=yes .docker/prod/prod-ingestor.Dockerfile \
+            "$REMOTE_USER@$REMOTE_SERVER:$REMOTE_WORKSPACE/.docker/prod/"
+
+      - name: Build and Deploy on Remote Server
+        env:
+          REMOTE_SERVER: ${{ secrets.REMOTE_SERVER }}
+          REMOTE_USER: ${{ secrets.REMOTE_USER }}
+          REMOTE_WORKSPACE: ${{ secrets.REMOTE_DEPLOY_DIR }}/ingestor-${{ github.run_id }}
+          BUILD_ID: ${{ github.run_id }}-${{ github.run_number }}
+          RESTART_REASON: github-actions-deploy
+        run: |
+          set -euo pipefail
+          ssh -o BatchMode=yes -o StrictHostKeyChecking=yes "$REMOTE_USER@$REMOTE_SERVER" \
+            RESTART_REASON="$RESTART_REASON" \
+            BUILD_ID="$BUILD_ID" \
+            REMOTE_WORKSPACE="$REMOTE_WORKSPACE" \
+            NAMESPACE="$NAMESPACE" \
+            DEPLOYMENT_NAME="$DEPLOYMENT_NAME" \
+            RELEASE_NAME="$RELEASE_NAME" \
+            bash << 'ENDSSH'
+            set -euo pipefail
+            export KUBECONFIG=/etc/rancher/k3s/k3s.yaml
+            cd "$REMOTE_WORKSPACE"
+
+            docker system prune -f
+            docker builder prune -f
+            docker build --no-cache -f .docker/prod/prod-ingestor.Dockerfile -t "chainmesh-ingestor:$BUILD_ID" .
+            docker save "chainmesh-ingestor:$BUILD_ID" | k3s ctr images import -
+
+            TIMESTAMP=$(date +%s)
+            helm upgrade --install "$RELEASE_NAME" .helm/ingestor \
+              --namespace "$NAMESPACE" \
+              --set namespace="$NAMESPACE" \
+              --set restartTimestamp="$TIMESTAMP" \
+              --set restartReason="$RESTART_REASON" \
+              --set image.repository="chainmesh-ingestor" \
+              --set image.tag="$BUILD_ID" \
+              --set image.pullPolicy="Never" \
+              --timeout=600s
+
+            kubectl wait --for=condition=available --timeout=300s "deployment/$DEPLOYMENT_NAME" -n "$NAMESPACE" || (
+              kubectl logs -n "$NAMESPACE" -l "app=$DEPLOYMENT_NAME" --tail=50 || true
+              helm rollback "$RELEASE_NAME" -n "$NAMESPACE"
+              exit 1
+            )
+            ENDSSH
+
+      - name: Cleanup Remote Workspace
+        if: always()
+        env:
+          REMOTE_SERVER: ${{ secrets.REMOTE_SERVER }}
+          REMOTE_USER: ${{ secrets.REMOTE_USER }}
+          REMOTE_WORKSPACE: ${{ secrets.REMOTE_DEPLOY_DIR }}/ingestor-${{ github.run_id }}
+        run: |
+          set -euo pipefail
+          ssh -o BatchMode=yes -o StrictHostKeyChecking=yes "$REMOTE_USER@$REMOTE_SERVER" \
+            "rm -rf '$REMOTE_WORKSPACE'"
