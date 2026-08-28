@@ -31,6 +31,8 @@ securityContext:
   runAsGroup: 1000
   fsGroup: 1000
 networkPolicy:
+  allowedFrom:
+    - app: chainmesh-web
   allowedTo:
     - app: chainmesh-postgresql
       port: 5432

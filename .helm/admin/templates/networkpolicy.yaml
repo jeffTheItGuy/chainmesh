@@ -18,6 +18,16 @@ spec:
       ports:
         - protocol: TCP
           port: {{ .Values.service.port }}
+    # ▼▼▼ ADD THIS BLOCK ▼▼▼
+  {{- range .Values.networkPolicy.allowedFrom }}
+    - from:
+        - podSelector:
+            matchLabels:
+              app: {{ .app }}
+      ports:
+        - protocol: TCP
+          port: {{ $.Values.service.port }}
+  {{- end }}
   egress:
   {{- range .Values.networkPolicy.allowedTo }}
     - to:
@@ -35,7 +45,6 @@ spec:
           port: 53
         - protocol: UDP
           port: 53
-    # ▼▼▼ ADD THIS BLOCK ▼▼▼
     - ports:
         - protocol: TCP
           port: 80
