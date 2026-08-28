@@ -19,7 +19,7 @@ spec:
         - protocol: TCP
           port: {{ .Values.service.port }}
   egress:
-    {{- range .Values.networkPolicy.allowedTo }}
+  {{- range .Values.networkPolicy.allowedTo }}
     - to:
         - podSelector:
             matchLabels:
@@ -27,7 +27,7 @@ spec:
       ports:
         - protocol: TCP
           port: {{ .port }}
-    {{- end }}
+  {{- end }}
     - to:
         - namespaceSelector: {}
       ports:
@@ -35,3 +35,9 @@ spec:
           port: 53
         - protocol: UDP
           port: 53
+    # ▼▼▼ ADD THIS BLOCK ▼▼▼
+    - ports:
+        - protocol: TCP
+          port: 80
+        - protocol: TCP
+          port: 443
