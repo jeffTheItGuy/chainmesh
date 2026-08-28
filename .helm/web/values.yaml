@@ -30,6 +30,8 @@ networkPolicy:
   allowedTo:
     - app: chainmesh-gateway
       port: 8080
+    - app: chainmesh-admin
+      port: 8081      
 probes:
   readiness:
     path: "/"
