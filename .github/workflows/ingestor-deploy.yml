@@ -93,7 +93,7 @@ jobs:
               helm rollback "$RELEASE_NAME" -n "$NAMESPACE"
               exit 1
             )
-            ENDSSH
+          ENDSSH
 
       - name: Cleanup Remote Workspace
         if: always()
