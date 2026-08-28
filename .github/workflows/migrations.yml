@@ -1,0 +1,108 @@
+name: Database Migrations
+
+on:
+  workflow_dispatch:
+  workflow_call:
+
+permissions: {}
+
+env:
+  NAMESPACE: chainmesh
+
+jobs:
+  migrate:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup SSH
+        env:
+          REMOTE_SSH: ${{ secrets.REMOTE_SSH }}
+          REMOTE_SERVER: ${{ secrets.REMOTE_SERVER }}
+        run: |
+          set -euo pipefail
+          if [ -z "${REMOTE_SSH:-}" ]; then echo "REMOTE_SSH secret is missing." >&2; exit 1; fi
+          if [ -z "${REMOTE_SERVER:-}" ]; then echo "REMOTE_SERVER secret is missing." >&2; exit 1; fi
+          mkdir -p ~/.ssh
+          chmod 700 ~/.ssh
+          printf '%s\n' "$REMOTE_SSH" | tr -d '\r' > ~/.ssh/id_rsa
+          chmod 600 ~/.ssh/id_rsa
+          ssh-keyscan -H "$REMOTE_SERVER" >> ~/.ssh/known_hosts 2>/dev/null || true
+          chmod 644 ~/.ssh/known_hosts
+
+      - name: Copy Migrations to Remote
+        env:
+          REMOTE_SERVER: ${{ secrets.REMOTE_SERVER }}
+          REMOTE_USER: ${{ secrets.REMOTE_USER }}
+          REMOTE_WORKSPACE: ${{ secrets.REMOTE_DEPLOY_DIR }}/migrations-${{ github.run_id }}
+        run: |
+          set -euo pipefail
+          ssh -o BatchMode=yes -o StrictHostKeyChecking=yes "$REMOTE_USER@$REMOTE_SERVER" \
+            "rm -rf '$REMOTE_WORKSPACE' && mkdir -p '$REMOTE_WORKSPACE/backend/database'"
+          scp -o BatchMode=yes -o StrictHostKeyChecking=yes -r backend/database/migrations \
+            "$REMOTE_USER@$REMOTE_SERVER:$REMOTE_WORKSPACE/backend/database/"
+
+      - name: Run Migrations on Remote Server
+        env:
+          REMOTE_SERVER: ${{ secrets.REMOTE_SERVER }}
+          REMOTE_USER: ${{ secrets.REMOTE_USER }}
+          REMOTE_WORKSPACE: ${{ secrets.REMOTE_DEPLOY_DIR }}/migrations-${{ github.run_id }}
+        run: |
+          set -euo pipefail
+          ssh -o BatchMode=yes -o StrictHostKeyChecking=yes "$REMOTE_USER@$REMOTE_SERVER" \
+            REMOTE_WORKSPACE="$REMOTE_WORKSPACE" \
+            NAMESPACE="$NAMESPACE" \
+            bash << 'ENDSSH'
+            set -euo pipefail
+            export KUBECONFIG=/etc/rancher/k3s/k3s.yaml
+
+            # Install migrate CLI if not already present
+            if ! command -v migrate >/dev/null 2>&1; then
+              curl -fsSL https://github.com/golang-migrate/migrate/releases/download/v4.18.1/migrate.linux-amd64.tar.gz -o /tmp/migrate.tar.gz
+              tar -xzf /tmp/migrate.tar.gz -C /tmp
+              install -m 0755 /tmp/migrate /usr/local/bin/migrate
+            fi
+
+            # URL-encode credentials (same bug class you already hit)
+            urlencode() {
+              local s="$1" out="" c i
+              for ((i=0; i<${#s}; i++)); do
+                c="${s:$i:1}"
+                case "$c" in
+                  [a-zA-Z0-9.~_-]) out+="$c" ;;
+                  *) out+="$(printf '%%%02X' "'$c")" ;;
+                esac
+              done
+              printf '%s' "$out"
+            }
+
+            DB_USER=$(kubectl get secret chainmesh-secrets -n "$NAMESPACE" -o jsonpath='{.data.DATABASE_USER}' | base64 -d)
+            DB_PASS=$(kubectl get secret chainmesh-secrets -n "$NAMESPACE" -o jsonpath='{.data.DATABASE_PASSWORD}' | base64 -d)
+            DB_USER_ENC="$(urlencode "$DB_USER")"
+            DB_PASS_ENC="$(urlencode "$DB_PASS")"
+
+            # Make sure Postgres is up before migrating
+            kubectl wait --for=condition=available --timeout=300s deployment/chainmesh-postgresql -n "$NAMESPACE"
+
+            # Port-forward Postgres so the host can reach the cluster-internal service
+            kubectl port-forward svc/chainmesh-postgresql-svc 15432:5432 -n "$NAMESPACE" >/dev/null 2>&1 &
+            PF_PID=$!
+            sleep 3
+
+            migrate -path "$REMOTE_WORKSPACE/backend/database/migrations" \
+              -database "postgres://${DB_USER_ENC}:${DB_PASS_ENC}@localhost:15432/chainmesh?sslmode=disable" up
+
+            kill "$PF_PID" 2>/dev/null || true
+            ENDSSH
+
+      - name: Cleanup Remote Workspace
+        if: always()
+        env:
+          REMOTE_SERVER: ${{ secrets.REMOTE_SERVER }}
+          REMOTE_USER: ${{ secrets.REMOTE_USER }}
+          REMOTE_WORKSPACE: ${{ secrets.REMOTE_DEPLOY_DIR }}/migrations-${{ github.run_id }}
+        run: |
+          set -euo pipefail
+          ssh -o BatchMode=yes -o StrictHostKeyChecking=yes "$REMOTE_USER@$REMOTE_SERVER" \
+            "rm -rf '$REMOTE_WORKSPACE'"
