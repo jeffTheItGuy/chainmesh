@@ -16,7 +16,6 @@ env:
 jobs:
   deploy:
     runs-on: ubuntu-latest
-
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -27,18 +26,14 @@ jobs:
           REMOTE_SERVER: ${{ secrets.REMOTE_SERVER }}
         run: |
           set -euo pipefail
-
           if [ -z "${REMOTE_SSH:-}" ]; then
             echo "REMOTE_SSH secret is missing." >&2
             exit 1
           fi
-
           mkdir -p ~/.ssh
           chmod 700 ~/.ssh
-
           printf '%s\n' "$REMOTE_SSH" | tr -d '\r' > ~/.ssh/id_rsa
           chmod 600 ~/.ssh/id_rsa
-
           ssh-keyscan -H "$REMOTE_SERVER" >> ~/.ssh/known_hosts 2>/dev/null || true
           chmod 644 ~/.ssh/known_hosts
 
@@ -49,16 +44,15 @@ jobs:
           REMOTE_WORKSPACE: ${{ secrets.REMOTE_DEPLOY_DIR }}/web-${{ github.run_id }}
         run: |
           set -euo pipefail
-
           ssh -o BatchMode=yes -o StrictHostKeyChecking=yes "$REMOTE_USER@$REMOTE_SERVER" \
-            "rm -rf '$REMOTE_WORKSPACE' && mkdir -p '$REMOTE_WORKSPACE/.helm' '$REMOTE_WORKSPACE/web' '$REMOTE_WORKSPACE/.docker/prod'"
-
+            "rm -rf '$REMOTE_WORKSPACE' && mkdir -p '$REMOTE_WORKSPACE/.helm' '$REMOTE_WORKSPACE/web' '$REMOTE_WORKSPACE/backend/api' '$REMOTE_WORKSPACE/.docker/prod'"
           scp -o BatchMode=yes -o StrictHostKeyChecking=yes -r .helm/web \
             "$REMOTE_USER@$REMOTE_SERVER:$REMOTE_WORKSPACE/.helm/"
-
           scp -o BatchMode=yes -o StrictHostKeyChecking=yes -r web/* \
             "$REMOTE_USER@$REMOTE_SERVER:$REMOTE_WORKSPACE/web/"
-
+          # ▼▼▼ ADDED: Copy the openapi.yaml file so the Dockerfile can find it ▼▼▼
+          scp -o BatchMode=yes -o StrictHostKeyChecking=yes backend/api/openapi.yaml \
+            "$REMOTE_USER@$REMOTE_SERVER:$REMOTE_WORKSPACE/backend/api/"
           scp -o BatchMode=yes -o StrictHostKeyChecking=yes .docker/prod/prod-web.Dockerfile \
             "$REMOTE_USER@$REMOTE_SERVER:$REMOTE_WORKSPACE/.docker/prod/"
 
@@ -71,7 +65,6 @@ jobs:
           RESTART_REASON: github-actions-deploy
         run: |
           set -euo pipefail
-
           ssh -o BatchMode=yes -o StrictHostKeyChecking=yes "$REMOTE_USER@$REMOTE_SERVER" \
             RESTART_REASON="$RESTART_REASON" \
             BUILD_ID="$BUILD_ID" \
@@ -83,19 +76,15 @@ jobs:
             SERVICE_PORT="$SERVICE_PORT" \
             bash << 'ENDSSH'
           set -euo pipefail
-
           export KUBECONFIG=/etc/rancher/k3s/k3s.yaml
-
           cd "$REMOTE_WORKSPACE"
 
           docker system prune -f
           docker builder prune -f
-
           docker build --no-cache -f .docker/prod/prod-web.Dockerfile -t "chainmesh-web:$BUILD_ID" .
           docker save "chainmesh-web:$BUILD_ID" | k3s ctr images import -
 
           TIMESTAMP=$(date +%s)
-
           helm upgrade --install "$RELEASE_NAME" .helm/web \
             --namespace "$NAMESPACE" \
             --set namespace="$NAMESPACE" \
@@ -122,6 +111,5 @@ jobs:
           REMOTE_WORKSPACE: ${{ secrets.REMOTE_DEPLOY_DIR }}/web-${{ github.run_id }}
         run: |
           set -euo pipefail
-
           ssh -o BatchMode=yes -o StrictHostKeyChecking=yes "$REMOTE_USER@$REMOTE_SERVER" \
             "rm -rf '$REMOTE_WORKSPACE'"
