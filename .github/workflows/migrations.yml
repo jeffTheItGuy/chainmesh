@@ -50,22 +50,25 @@ jobs:
           REMOTE_WORKSPACE: ${{ secrets.REMOTE_DEPLOY_DIR }}/migrations-${{ github.run_id }}
         run: |
           set -euo pipefail
-          ssh -o BatchMode=yes -o StrictHostKeyChecking=yes "$REMOTE_USER@$REMOTE_SERVER" \
-            REMOTE_WORKSPACE="$REMOTE_WORKSPACE" \
-            NAMESPACE="$NAMESPACE" \
-            bash << 'ENDSSH'
+          
+          # Write the remote script locally to completely avoid YAML/heredoc indentation bugs
+          cat > /tmp/run-migrations.sh << 'EOF'
+          #!/bin/bash
           set -euo pipefail
           export KUBECONFIG=/etc/rancher/k3s/k3s.yaml
-
-          MIGRATE="$HOME/bin/migrate"
-          if [ ! -x "$MIGRATE" ]; then
-            mkdir -p "$HOME/bin"
+          
+          # Install migrate to user's bin directory (avoids root permission issues)
+          mkdir -p "$HOME/bin"
+          export PATH="$HOME/bin:$PATH"
+          if ! command -v migrate >/dev/null 2>&1; then
+            echo "Installing migrate CLI..."
             curl -fsSL https://github.com/golang-migrate/migrate/releases/download/v4.18.1/migrate.linux-amd64.tar.gz -o /tmp/migrate.tar.gz
             tar -xzf /tmp/migrate.tar.gz -C /tmp
-            mv /tmp/migrate "$MIGRATE"
-            chmod +x "$MIGRATE"
+            mv /tmp/migrate "$HOME/bin/migrate"
+            chmod +x "$HOME/bin/migrate"
           fi
 
+          # URL encode function to handle special characters in passwords
           urlencode() {
             local s="$1" out="" c i
             for ((i=0; i<${#s}; i++)); do
@@ -85,15 +88,42 @@ jobs:
 
           kubectl wait --for=condition=available --timeout=300s deployment/chainmesh-postgresql -n "$NAMESPACE"
 
-          kubectl port-forward svc/chainmesh-postgresql-svc 15432:5432 -n "$NAMESPACE" >/dev/null 2>&1 &
+          # Use a random high port to avoid port-forward collisions
+          PF_PORT=$((15000 + RANDOM % 10000))
+          echo "Port-forwarding Postgres to localhost:${PF_PORT}..."
+          kubectl port-forward svc/chainmesh-postgresql-svc "${PF_PORT}:5432" -n "$NAMESPACE" >/dev/null 2>&1 &
           PF_PID=$!
           sleep 3
 
-          "$MIGRATE" -path "$REMOTE_WORKSPACE/backend/database/migrations" \
-            -database "postgres://${DB_USER_ENC}:${DB_PASS_ENC}@localhost:15432/chainmesh?sslmode=disable" up
-
+          set +e
+          echo "Running migrations..."
+          migrate -path "$REMOTE_WORKSPACE/backend/database/migrations" \
+            -database "postgres://${DB_USER_ENC}:${DB_PASS_ENC}@localhost:${PF_PORT}/chainmesh?sslmode=disable" up
+          MIGRATE_EXIT=$?
+          set -e
+          
           kill "$PF_PID" 2>/dev/null || true
-          ENDSSH
+          
+          if [ "$MIGRATE_EXIT" -ne 0 ]; then
+            echo "❌ Migrations failed!"
+            exit "$MIGRATE_EXIT"
+          fi
+          
+          echo "✅ Migrations successful. Restarting app pods..."
+          kubectl rollout restart deployment chainmesh-gateway chainmesh-admin chainmesh-ingestor -n "$NAMESPACE"
+          EOF
+
+          # Copy the script to the remote server
+          scp -o BatchMode=yes -o StrictHostKeyChecking=yes /tmp/run-migrations.sh "$REMOTE_USER@$REMOTE_SERVER:/tmp/run-migrations.sh"
+          
+          # Execute it
+          ssh -o BatchMode=yes -o StrictHostKeyChecking=yes "$REMOTE_USER@$REMOTE_SERVER" \
+            REMOTE_WORKSPACE="$REMOTE_WORKSPACE" \
+            NAMESPACE="$NAMESPACE" \
+            bash /tmp/run-migrations.sh
+            
+          # Clean up remote script
+          ssh -o BatchMode=yes -o StrictHostKeyChecking=yes "$REMOTE_USER@$REMOTE_SERVER" "rm -f /tmp/run-migrations.sh"
 
       - name: Cleanup Remote Workspace
         if: always()
