@@ -30,7 +30,7 @@ spec:
           envFrom: {{ toYaml .Values.envFrom | nindent 12 }}
           env:
             - name: DATABASE_URL
-              value: "postgres://$(DATABASE_USER):$(DATABASE_PASSWORD)@chainmesh-postgresql-svc:5432/$(POSTGRES_DB)"
+              value: "host=chainmesh-postgresql-svc port=5432 user=$(DATABASE_USER) password=$(DATABASE_PASSWORD) dbname=$(POSTGRES_DB) sslmode=disable"
             {{- range $key, $value := .Values.env }}
             - name: {{ $key }}
               value: {{ $value | quote }}
