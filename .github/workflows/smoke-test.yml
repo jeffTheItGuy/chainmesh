@@ -100,14 +100,6 @@ jobs:
             echo "No results file was produced." >> "$GITHUB_STEP_SUMMARY"
           fi
 
-      - name: Upload results artifact
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: smoke-results-${{ github.run_number }}
-          path: smoke-results.md
-          if-no-files-found: ignore
-
       - name: Fail job if smoke tests failed
         if: steps.smoke.outcome == 'failure'
         run: |

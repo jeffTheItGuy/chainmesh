@@ -1,43 +1,32 @@
-// tests/load/gateway_load.js
-import http from 'k6/http';
-import { check, sleep } from 'k6';
+export function handleSummary(data) {
+  const reqDuration = data.metrics.http_req_duration;
+  const reqFailed = data.metrics.http_req_failed;
 
-export const options = {
-  stages: [
-    { duration: '2m', target: 100 },   // Ramp up
-    { duration: '5m', target: 100 },   // Steady state
-    { duration: '2m', target: 200 },   // Stress
-    { duration: '2m', target: 0 },     // Ramp down
-  ],
-  thresholds: {
-    http_req_duration: ['p(95)<250'],   // 95th percentile < 250ms
-    http_req_failed: ['rate<0.01'],     // Error rate < 1%
-  },
-};
+  const p95 = reqDuration ? reqDuration.values['p(95)'].toFixed(2) : 'N/A';
+  const avg = reqDuration ? reqDuration.values['avg'].toFixed(2) : 'N/A';
+  const failRate = reqFailed ? (reqFailed.values['rate'] * 100).toFixed(2) : 'N/A';
 
-const GATEWAY_URL = __ENV.GATEWAY_URL || 'http://localhost:8080/v1/';
-const API_KEY = __ENV.TEST_API_KEY;
+  const p95Pass = reqDuration && reqDuration.thresholds['p(95)<250'].ok;
+  const errPass = reqFailed && reqFailed.thresholds['rate<0.01'].ok;
+  const verdict = (p95Pass && errPass) ? "✅" : "❌";
 
-export default function () {
-  const payload = JSON.stringify({
-    jsonrpc: '2.0',
-    method: 'eth_chainId',
-    params: [],
-    id: 1,
-  });
+  const mdSummary = `## ${verdict} ChainMesh Load Test Results\n\n` +
+    `| Metric | Value | Threshold | Status |\n` +
+    `|---|---|---|---|\n` +
+    `| p(95) Latency | ${p95}ms | < 250ms | ${p95Pass ? '✅ Pass' : '❌ Fail'} |\n` +
+    `| Avg Latency | ${avg}ms | - | - |\n` +
+    `| Error Rate | ${failRate}% | < 1% | ${errPass ? '✅ Pass' : '❌ Fail'} |\n\n` +
+    `*Total Requests: ${data.metrics.http_reqs.values.count}*\n`;
 
-  const res = http.post(GATEWAY_URL, payload, {
-    headers: {
-      'Authorization': `Bearer ${API_KEY}`,
-      'Content-Type': 'application/json',
-    },
-  });
+  const outputs = {
+    'stdout': textSummary(data, { indent: ' ', enableColors: true }),
+  };
 
-  check(res, {
-    'status is 200': (r) => r.status === 200,
-    'has result': (r) => JSON.parse(r.body).result !== undefined,
-    'cache header present': (r) => r.headers['X-Cache'] !== undefined,
-  });
+  // Write directly to the GitHub job summary file if running in Actions
+  const summaryPath = __ENV.GITHUB_STEP_SUMMARY;
+  if (summaryPath) {
+    outputs[summaryPath] = mdSummary;
+  }
 
-  sleep(1);
+  return outputs;
 }

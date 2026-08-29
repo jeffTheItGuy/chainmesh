@@ -7,6 +7,9 @@ export KUBECONFIG="${KUBECONFIG:-/etc/rancher/k3s/k3s.yaml}"
 NAMESPACE="${NAMESPACE:-chainmesh}"
 RESULTS_FILE="${RESULTS_FILE:-/tmp/chainmesh-smoke/results.md}"
 
+# Ensure the directory exists
+mkdir -p "$(dirname "$RESULTS_FILE")"
+
 PASS=0
 FAIL=0
 ROWS=""
@@ -50,10 +53,11 @@ echo ""
 CODE=$(curl -s -o /dev/null -w "%{http_code}" --max-time 10 -X POST "$GATEWAY_URL" \
   -H "Content-Type: application/json" \
   -d '{"jsonrpc":"2.0","method":"eth_chainId","params":[],"id":1}')
+
 if [ "$CODE" != "000" ]; then
-  record "Gateway reachable" pass "HTTP $CODE"
+  record "Gateway reachable" "pass" "HTTP $CODE"
 else
-  record "Gateway reachable" fail "no response (000)"
+  record "Gateway reachable" "fail" "no response (000)"
 fi
 
 if [ -n "$TEST_API_KEY" ]; then
@@ -62,10 +66,11 @@ if [ -n "$TEST_API_KEY" ]; then
     -H "Authorization: Bearer ${TEST_API_KEY}" \
     -H "Content-Type: application/json" \
     -d '{"jsonrpc":"2.0","method":"eth_chainId","params":[],"id":1}')
+  
   if echo "$RESP" | grep -q '"result"'; then
-    record "Authenticated RPC" pass "returned result"
+    record "Authenticated RPC" "pass" "returned result"
   else
-    record "Authenticated RPC" fail "no result in response"
+    record "Authenticated RPC" "fail" "no result in response"
   fi
 
   # --- 3. Cache MISS on first call ---
@@ -73,10 +78,11 @@ if [ -n "$TEST_API_KEY" ]; then
     -H "Authorization: Bearer ${TEST_API_KEY}" \
     -H "Content-Type: application/json" \
     -d '{"jsonrpc":"2.0","method":"eth_chainId","params":[],"id":1}' -D - -o /dev/null | grep -i "X-Cache:")
+  
   if echo "$H1" | grep -qi "MISS"; then
-    record "Cache MISS (1st call)" pass "$(echo "$H1" | tr -d '\r')"
+    record "Cache MISS (1st call)" "pass" "$(echo "$H1" | tr -d '\r')"
   else
-    record "Cache MISS (1st call)" fail "${H1:-no X-Cache header}"
+    record "Cache MISS (1st call)" "fail" "${H1:-no X-Cache header}"
   fi
 
   # --- 4. Cache HIT on second call ---
@@ -84,10 +90,11 @@ if [ -n "$TEST_API_KEY" ]; then
     -H "Authorization: Bearer ${TEST_API_KEY}" \
     -H "Content-Type: application/json" \
     -d '{"jsonrpc":"2.0","method":"eth_chainId","params":[],"id":1}' -D - -o /dev/null | grep -i "X-Cache:")
+  
   if echo "$H2" | grep -qi "HIT"; then
-    record "Cache HIT (2nd call)" pass "$(echo "$H2" | tr -d '\r')"
+    record "Cache HIT (2nd call)" "pass" "$(echo "$H2" | tr -d '\r')"
   else
-    record "Cache HIT (2nd call)" fail "${H2:-no X-Cache header}"
+    record "Cache HIT (2nd call)" "fail" "${H2:-no X-Cache header}"
   fi
 
   # --- 5. Rate limit headers present ---
@@ -95,28 +102,29 @@ if [ -n "$TEST_API_KEY" ]; then
     -H "Authorization: Bearer ${TEST_API_KEY}" \
     -H "Content-Type: application/json" \
     -d '{"jsonrpc":"2.0","method":"eth_blockNumber","params":[],"id":1}' -D - -o /dev/null)
+  
   if echo "$RH" | grep -qi "X-RateLimit-Remaining"; then
-    record "Rate limit headers" pass "present"
+    record "Rate limit headers" "pass" "present"
   else
-    record "Rate limit headers" fail "missing"
+    record "Rate limit headers" "fail" "missing"
   fi
 else
-  record "Authenticated RPC" skip "TEST_API_KEY not set"
-  record "Cache MISS (1st call)" skip "TEST_API_KEY not set"
-  record "Cache HIT (2nd call)" skip "TEST_API_KEY not set"
-  record "Rate limit headers" skip "TEST_API_KEY not set"
+  record "Authenticated RPC" "skip" "TEST_API_KEY not set"
+  record "Cache MISS (1st call)" "skip" "TEST_API_KEY not set"
+  record "Cache HIT (2nd call)" "skip" "TEST_API_KEY not set"
+  record "Rate limit headers" "skip" "TEST_API_KEY not set"
 fi
 
 # --- 6. Web dashboard reachable (internal ClusterIP) ---
 if [ -n "$WEB_URL" ]; then
   WCODE=$(curl -s -o /dev/null -w "%{http_code}" --max-time 10 "$WEB_URL")
   if [ "$WCODE" = "200" ]; then
-    record "Web dashboard" pass "HTTP $WCODE"
+    record "Web dashboard" "pass" "HTTP $WCODE"
   else
-    record "Web dashboard" fail "HTTP $WCODE"
+    record "Web dashboard" "fail" "HTTP $WCODE"
   fi
 else
-  record "Web dashboard" skip "web service not found"
+  record "Web dashboard" "skip" "web service not found"
 fi
 
 # --- Render markdown results ---
@@ -133,7 +141,13 @@ if [ "$FAIL" -eq 0 ]; then VERDICT="✅"; else VERDICT="❌"; fi
   printf "%b" "$ROWS"
 } > "$RESULTS_FILE"
 
+# Print to standard workflow logs
 cat "$RESULTS_FILE"
+
+# ✨ Append to GitHub Actions Job Summary UI
+if [ -n "$GITHUB_STEP_SUMMARY" ]; then
+  cat "$RESULTS_FILE" >> "$GITHUB_STEP_SUMMARY"
+fi
 
 # Exit non-zero if any check failed (drives the workflow's red/green status)
 [ "$FAIL" -eq 0 ]
