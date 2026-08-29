@@ -1,0 +1,150 @@
+name: Apply Helm Changes
+
+on:
+  workflow_dispatch:
+    inputs:
+      force_all:
+        description: 'Force apply all Helm charts'
+        required: false
+        default: 'false'
+        type: boolean
+  push:
+    branches:
+      - main
+    paths:
+      - '.helm/**'
+
+permissions:
+  contents: read
+
+env:
+  NAMESPACE: chainmesh
+
+jobs:
+  sync-helm:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0 # Required for tj-actions/changed-files to work correctly
+
+      - name: Get changed files
+        id: changed-files
+        uses: tj-actions/changed-files@v44
+        with:
+          files: |
+            .helm/**
+          dir_names: true
+          dir_names_max_depth: 2
+
+      - name: Parse changed charts
+        id: parse
+        run: |
+          if [ "${{ github.event.inputs.force_all }}" == "true" ]; then
+            CHARTS=$(ls -d .helm/*/ | cut -d/ -f2 | sort -u | tr '\n' ' ' | xargs)
+            echo "charts=$CHARTS" >> $GITHUB_OUTPUT
+            echo "Force updating all charts: $CHARTS"
+            exit 0
+          fi
+
+          CHANGED_FILES="${{ steps.changed-files.outputs.all_changed_files }}"
+          if [ -z "$CHANGED_FILES" ]; then
+            echo "charts=" >> $GITHUB_OUTPUT
+            echo "No Helm charts changed."
+            exit 0
+          fi
+          
+          # Extract chart names (e.g., .helm/admin -> admin)
+          CHARTS=$(echo "$CHANGED_FILES" | sed 's|\.helm/||g' | sort -u | tr '\n' ' ' | xargs)
+          echo "charts=$CHARTS" >> $GITHUB_OUTPUT
+          echo "Charts to update: $CHARTS"
+
+      - name: Setup SSH
+        if: steps.parse.outputs.charts != ''
+        env:
+          REMOTE_SSH: ${{ secrets.REMOTE_SSH }}
+          REMOTE_SERVER: ${{ secrets.REMOTE_SERVER }}
+        run: |
+          set -euo pipefail
+          if [ -z "${REMOTE_SSH:-}" ]; then echo "REMOTE_SSH secret is missing." >&2; exit 1; fi
+          if [ -z "${REMOTE_SERVER:-}" ]; then echo "REMOTE_SERVER secret is missing." >&2; exit 1; fi
+          mkdir -p ~/.ssh
+          chmod 700 ~/.ssh
+          printf '%s\n' "$REMOTE_SSH" | tr -d '\r' > ~/.ssh/id_rsa
+          chmod 600 ~/.ssh/id_rsa
+          ssh-keyscan -H "$REMOTE_SERVER" >> ~/.ssh/known_hosts 2>/dev/null || true
+          chmod 644 ~/.ssh/known_hosts
+
+      - name: Copy and Apply Charts
+        if: steps.parse.outputs.charts != ''
+        env:
+          REMOTE_SERVER: ${{ secrets.REMOTE_SERVER }}
+          REMOTE_USER: ${{ secrets.REMOTE_USER }}
+          REMOTE_WORKSPACE: ${{ secrets.REMOTE_DEPLOY_DIR }}/helm-sync-${{ github.run_id }}
+          CHANGED_CHARTS: ${{ steps.parse.outputs.charts }}
+        run: |
+          set -euo pipefail
+          
+          # Create remote workspace
+          ssh -o BatchMode=yes -o StrictHostKeyChecking=yes "$REMOTE_USER@$REMOTE_SERVER" \
+            "rm -rf '$REMOTE_WORKSPACE' && mkdir -p '$REMOTE_WORKSPACE/.helm'"
+          
+          # Copy only the changed charts
+          for CHART in $CHANGED_CHARTS; do
+            echo "Copying .helm/$CHART..."
+            scp -o BatchMode=yes -o StrictHostKeyChecking=yes -r ".helm/$CHART" \
+              "$REMOTE_USER@$REMOTE_SERVER:$REMOTE_WORKSPACE/.helm/"
+          done
+          
+          # Execute helm upgrade on remote
+          ssh -o BatchMode=yes -o StrictHostKeyChecking=yes "$REMOTE_USER@$REMOTE_SERVER" \
+            REMOTE_WORKSPACE="$REMOTE_WORKSPACE" \
+            NAMESPACE="$NAMESPACE" \
+            CHANGED_CHARTS="$CHANGED_CHARTS" \
+            bash << 'ENDSSH'
+            set -euo pipefail
+            export KUBECONFIG=/etc/rancher/k3s/k3s.yaml
+            cd "$REMOTE_WORKSPACE"
+            
+            for CHART in $CHANGED_CHARTS; do
+              echo "========================================="
+              echo "Processing chart: $CHART"
+              echo "========================================="
+              
+              RELEASE_NAME="${CHART}-release"
+              DEPLOYMENT_NAME="chainmesh-${CHART}"
+              
+              TIMESTAMP=$(date +%s)
+              EXTRA_ARGS=""
+              
+              # For app charts, preserve the currently running image tag
+              if [[ "$CHART" =~ ^(admin|gateway|ingestor|web)$ ]]; then
+                CURRENT_TAG=$(kubectl get deployment "$DEPLOYMENT_NAME" -n "$NAMESPACE" -o jsonpath='{.spec.template.spec.containers[0].image}' 2>/dev/null | awk -F: '{print $2}' || echo "")
+                if [ -n "$CURRENT_TAG" ]; then
+                  EXTRA_ARGS="--set image.repository=chainmesh-$CHART --set image.tag=$CURRENT_TAG --set image.pullPolicy=Never"
+                  echo "Preserving image tag: $CURRENT_TAG"
+                else
+                  echo "⚠️ Warning: Could not find existing image tag for $DEPLOYMENT_NAME. Using chart defaults."
+                fi
+              fi
+              
+              UPGRADE_CMD="helm upgrade --install $RELEASE_NAME .helm/$CHART \
+                --namespace $NAMESPACE \
+                --set namespace=$NAMESPACE \
+                --set restartTimestamp=$TIMESTAMP \
+                --timeout=600s $EXTRA_ARGS"
+                
+              echo "Running: $UPGRADE_CMD"
+              eval $UPGRADE_CMD
+              
+              # Wait for rollout if it's an app chart with a deployment
+              if kubectl get deployment "$DEPLOYMENT_NAME" -n "$NAMESPACE" >/dev/null 2>&1; then
+                echo "Waiting for deployment $DEPLOYMENT_NAME to rollout..."
+                kubectl rollout status deployment/"$DEPLOYMENT_NAME" -n "$NAMESPACE" --timeout=300s || echo "⚠️ Rollout timed out or failed for $DEPLOYMENT_NAME"
+              fi
+            done
+          ENDSSH
+          
+          # Cleanup
+          ssh -o BatchMode=yes -o StrictHostKeyChecking=yes "$REMOTE_USER@$REMOTE_SERVER" "rm -rf '$REMOTE_WORKSPACE'"
