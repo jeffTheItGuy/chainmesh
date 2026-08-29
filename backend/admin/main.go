@@ -295,14 +295,15 @@ func newAdminMux(secret string, db *postgres.DB, log *slog.Logger) *http.ServeMu
 
 	// ─── Blocks ──────────────────────────────────────────────────────────────
 
-	mux.HandleFunc("GET /blocks", auth(func(w http.ResponseWriter, r *http.Request) {
+	// ✅ Public endpoint: both viewers and admins can see recent blocks
+	mux.HandleFunc("GET /blocks", func(w http.ResponseWriter, r *http.Request) {
 		blocks, err := db.ListBlocks(r.Context(), 50)
 		if err != nil {
 			http.Error(w, `{"error":"internal"}`, http.StatusInternalServerError)
 			return
 		}
 		json.NewEncoder(w).Encode(blocks)
-	}))
+	})
 
 	// ─── Audit Logs ──────────────────────────────────────────────────────────
 
