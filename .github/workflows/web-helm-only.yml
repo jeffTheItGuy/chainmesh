@@ -1,0 +1,156 @@
+name: Web Helm Only
+
+on:
+  workflow_dispatch:
+    inputs:
+      image_tag:
+        description: "Optional image tag already imported into k3s. Leave empty to reuse current deployment tag."
+        required: false
+        default: ""
+
+permissions:
+  contents: read
+
+concurrency:
+  group: web-helm-only
+  cancel-in-progress: false
+
+env:
+  NAMESPACE: chainmesh
+  DOMAIN: chainmesh.nimbusurf.com
+  RELEASE_NAME: web-release
+  DEPLOYMENT_NAME: chainmesh-web
+  IMAGE_REPOSITORY: chainmesh-web
+  RESTART_REASON: helm-only
+
+jobs:
+  helm-only:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup SSH
+        env:
+          REMOTE_SSH: ${{ secrets.REMOTE_SSH }}
+          REMOTE_SERVER: ${{ secrets.REMOTE_SERVER }}
+        run: |
+          set -euo pipefail
+          if [ -z "${REMOTE_SSH:-}" ]; then
+            echo "REMOTE_SSH secret is missing." >&2
+            exit 1
+          fi
+          if [ -z "${REMOTE_SERVER:-}" ]; then
+            echo "REMOTE_SERVER secret is missing." >&2
+            exit 1
+          fi
+
+          mkdir -p ~/.ssh
+          chmod 700 ~/.ssh
+          printf '%s\n' "$REMOTE_SSH" | tr -d '\r' > ~/.ssh/id_rsa
+          chmod 600 ~/.ssh/id_rsa
+          ssh-keyscan -H "$REMOTE_SERVER" >> ~/.ssh/known_hosts 2>/dev/null || true
+          chmod 644 ~/.ssh/known_hosts
+
+      - name: Copy Helm Chart to Remote
+        env:
+          REMOTE_SERVER: ${{ secrets.REMOTE_SERVER }}
+          REMOTE_USER: ${{ secrets.REMOTE_USER }}
+          REMOTE_DEPLOY_DIR: ${{ secrets.REMOTE_DEPLOY_DIR }}
+          REMOTE_WORKSPACE: ${{ secrets.REMOTE_DEPLOY_DIR }}/web-helm-${{ github.run_id }}
+        run: |
+          set -euo pipefail
+          : "${REMOTE_SERVER:?REMOTE_SERVER secret is missing}"
+          : "${REMOTE_USER:?REMOTE_USER secret is missing}"
+          : "${REMOTE_DEPLOY_DIR:?REMOTE_DEPLOY_DIR secret is missing}"
+
+          if [ ! -d .helm/web ]; then
+            echo "Missing .helm/web" >&2
+            exit 1
+          fi
+
+          ssh -o BatchMode=yes -o StrictHostKeyChecking=yes "$REMOTE_USER@$REMOTE_SERVER" \
+            "rm -rf '$REMOTE_WORKSPACE' && mkdir -p '$REMOTE_WORKSPACE/.helm'"
+
+          scp -o BatchMode=yes -o StrictHostKeyChecking=yes -r .helm/web \
+            "$REMOTE_USER@$REMOTE_SERVER:$REMOTE_WORKSPACE/.helm/"
+
+      - name: Helm Upgrade Only
+        env:
+          REMOTE_SERVER: ${{ secrets.REMOTE_SERVER }}
+          REMOTE_USER: ${{ secrets.REMOTE_USER }}
+          REMOTE_DEPLOY_DIR: ${{ secrets.REMOTE_DEPLOY_DIR }}
+          REMOTE_WORKSPACE: ${{ secrets.REMOTE_DEPLOY_DIR }}/web-helm-${{ github.run_id }}
+          IMAGE_TAG_INPUT: ${{ github.event.inputs.image_tag || '' }}
+        run: |
+          set -euo pipefail
+          : "${REMOTE_SERVER:?REMOTE_SERVER secret is missing}"
+          : "${REMOTE_USER:?REMOTE_USER secret is missing}"
+          : "${REMOTE_DEPLOY_DIR:?REMOTE_DEPLOY_DIR secret is missing}"
+
+          ssh -o BatchMode=yes -o StrictHostKeyChecking=yes "$REMOTE_USER@$REMOTE_SERVER" \
+            REMOTE_WORKSPACE="$REMOTE_WORKSPACE" \
+            NAMESPACE="$NAMESPACE" \
+            DOMAIN="$DOMAIN" \
+            RELEASE_NAME="$RELEASE_NAME" \
+            DEPLOYMENT_NAME="$DEPLOYMENT_NAME" \
+            IMAGE_REPOSITORY="$IMAGE_REPOSITORY" \
+            IMAGE_TAG_INPUT="$IMAGE_TAG_INPUT" \
+            RESTART_REASON="$RESTART_REASON" \
+            bash << 'ENDSSH'
+          set -euo pipefail
+          export KUBECONFIG=/etc/rancher/k3s/k3s.yaml
+          cd "$REMOTE_WORKSPACE"
+
+          TIMESTAMP=$(date +%s)
+
+          if [ -n "${IMAGE_TAG_INPUT:-}" ]; then
+            IMAGE_TAG="$IMAGE_TAG_INPUT"
+          else
+            CURRENT_IMAGE="$(kubectl get deployment "$DEPLOYMENT_NAME" -n "$NAMESPACE" -o jsonpath='{.spec.template.spec.containers[0].image}' 2>/dev/null || true)"
+            if [ -n "$CURRENT_IMAGE" ]; then
+              case "$CURRENT_IMAGE" in
+                *:*) IMAGE_TAG="${CURRENT_IMAGE##*:}" ;;
+                *) IMAGE_TAG="latest" ;;
+              esac
+            else
+              IMAGE_TAG="latest"
+            fi
+          fi
+
+          echo "Helm-only deploy: $RELEASE_NAME using $IMAGE_REPOSITORY:$IMAGE_TAG"
+
+          helm upgrade --install "$RELEASE_NAME" .helm/web \
+            --namespace "$NAMESPACE" \
+            --set namespace="$NAMESPACE" \
+            --set ingress.host="$DOMAIN" \
+            --set restartTimestamp="$TIMESTAMP" \
+            --set restartReason="$RESTART_REASON" \
+            --set image.repository="$IMAGE_REPOSITORY" \
+            --set image.tag="$IMAGE_TAG" \
+            --set image.pullPolicy="Never" \
+            --timeout=600s
+
+          kubectl wait --for=condition=available --timeout=300s "deployment/$DEPLOYMENT_NAME" -n "$NAMESPACE" || (
+            kubectl logs -n "$NAMESPACE" -l "app=$DEPLOYMENT_NAME" --tail=50 || true
+            helm rollback "$RELEASE_NAME" -n "$NAMESPACE" || true
+            exit 1
+          )
+          ENDSSH
+
+      - name: Cleanup Remote Workspace
+        if: always()
+        env:
+          REMOTE_SERVER: ${{ secrets.REMOTE_SERVER }}
+          REMOTE_USER: ${{ secrets.REMOTE_USER }}
+          REMOTE_DEPLOY_DIR: ${{ secrets.REMOTE_DEPLOY_DIR }}
+          REMOTE_WORKSPACE: ${{ secrets.REMOTE_DEPLOY_DIR }}/web-helm-${{ github.run_id }}
+        run: |
+          set -euo pipefail
+          if [ -z "${REMOTE_SERVER:-}" ] || [ -z "${REMOTE_USER:-}" ] || [ -z "${REMOTE_DEPLOY_DIR:-}" ] || [ -z "${REMOTE_WORKSPACE:-}" ] || [ ! -f "$HOME/.ssh/id_rsa" ]; then
+            echo "Skipping cleanup because SSH is not fully configured." >&2
+            exit 0
+          fi
+
+          ssh -o BatchMode=yes -o StrictHostKeyChecking=yes "$REMOTE_USER@$REMOTE_SERVER" \
+            "rm -rf '$REMOTE_WORKSPACE'"
