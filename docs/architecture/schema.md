@@ -1,27 +1,82 @@
-# Database Schema
+# ChainMesh Database Schema
 
-ChainMesh uses PostgreSQL 15 with pgx/v5. The schema evolves through numbered migrations and supports multi-tenant, multi-network operation.
+> **Single Source of Truth:** For the machine-readable schema definition (columns, types, constraints, indexes, foreign keys, and migration history), see [`database.xml`](database.xml).
+>
+> This document provides the human-readable companion to that file.
 
 ---
 
 ## Migration History
 
-| File | Purpose |
-|------|---------|
-| `001_init.up.sql` | Core tables: `tenants`, `usage`, `blocks` |
-| `001_init.down.sql` | Drop core tables |
-| `002_audit_logs.sql` | Admin audit trail |
-| `002_blockchain_config.sql` | Add `blockchain_configs` table |
-| `003_multi_network.sql` | Multi-network support: FKs, unique constraints, indexes |
-| `004_api_keys.sql` | Separate `api_keys` table; hash-based auth |
-| `005_request_logs.sql` | Per-request audit logging |
-| `006_tenant_rate_limits.sql` | Per-tenant plan, RPS, daily quotas |
-| `007_request_id.sql` | Add `request_id` to request logs |
-| `008_stats_rollup.sql` | Pre-aggregated materialized view for dashboards |
+The schema evolves through numbered migrations in `migrations/`. **Run them in order.**
+
+| # | File | Description |
+|---|------|-------------|
+| 001 | `001_init.up.sql` | Core tables: `tenants`, `usage`, `blocks` |
+| 001 | `001_init.down.sql` | Drops core tables |
+| 002 | `002_audit_logs.up.sql` | Admin audit trail: `audit_logs` |
+| 003 | `003_blockchain_config.up.sql` | Blockchain network configuration |
+| 003 | `003_multi_network.sql` | Multi-network FKs; composite PK on `blocks` |
+| 004 | `004_multi_network.up.sql` | Consolidated multi-network migration; drops `blocks_hash_key` |
+| 005 | `005_api_keys.up.sql` | Separate `api_keys` table with bcrypt hashes |
+| 006 | `006_request_logs.up.sqlup.sql` | Per-request audit logging |
+| 007 | `007_tenant_rate_limits.up.sql` | Per-tenant `plan`, `quota_rps`, `quota_daily` |
+| 008 | `008_request_id.up.sql` | Adds `request_id` to `request_logs` |
+| 009 | `009_stats_rollup.up.sql` | Pre-aggregated materialized view for dashboards |
+
+> **Note:** Migrations 003 and 004 both touch multi-network support. In practice, run `003_blockchain_config.up.sql` first, then either `003_multi_network.sql` **or** `004_multi_network.up.sql` (004 is the superset and drops the old `blocks_hash_key` unique constraint).
 
 ---
 
 ## Entity Relationship Diagram
+
+```
+┌─────────────────┐     ┌─────────────────────┐     ┌─────────────────────┐
+│  tenants        │     │  api_keys           │     │  blockchain_configs │
+├─────────────────┤     ├─────────────────────┤     ├─────────────────────┤
+│ id (PK)         │◄────┤ tenant_id (FK)      │     │ id (PK)             │
+│ name            │     │ key_hash (UNIQUE)   │     │ name                │
+│ api_key (NULL)  │     │ key_prefix          │     │ rpc_endpoint_1      │
+│ quota_rpm       │     │ revoked_at          │     │ rpc_endpoint_2      │
+│ quota_rps       │     │ last_used_at        │     │ chain_id            │
+│ quota_daily     │     └─────────────────────┘     │ enabled             │
+│ plan            │                                 └──────────┬──────────┘
+│ blockchain_     │◄────────────────────────────────────────────┘
+│   network_id(FK)│
+└───────┬─────────┘
+        │
+        │ 1:N
+        ▼
+┌─────────────────┐     ┌─────────────────────┐     ┌─────────────────────┐
+│  usage          │     │  request_logs       │     │  blocks             │
+├─────────────────┤     ├─────────────────────┤     ├─────────────────────┤
+│ tenant_id (FK) │     │ id (PK)             │     │ number (PK)         │
+│ method          │     │ tenant_id (FK)      │     │ hash                │
+│ count           │     │ network_id (FK)     │     │ parent_hash         │
+│ bytes_in        │     │ method              │     │ timestamp           │
+│ period (PK)     │     │ status              │     │ tx_count            │
+└─────────────────┘     │ latency_ms          │     │ raw_json            │
+                        │ cache_hit           │     │ network_id (FK,PK)  │
+                        │ bytes_in            │     │ created_at          │
+                        │ request_id          │     └─────────────────────┘
+                        │ created_at          │
+                        └─────────────────────┘
+                                    │
+                                    ▼
+                        ┌─────────────────────┐
+                        │ audit_logs          │
+                        ├─────────────────────┤
+                        │ id (PK)             │
+                        │ actor               │
+                        │ action              │
+                        │ resource_type       │
+                        │ resource_id         │
+                        │ details (JSONB)     │
+                        │ ip_address          │
+                        │ user_agent          │
+                        │ created_at          │
+                        └─────────────────────┘
+```
 
 ---
 
@@ -29,13 +84,13 @@ ChainMesh uses PostgreSQL 15 with pgx/v5. The schema evolves through numbered mi
 
 ### `tenants`
 
-The root entity for multi-tenancy. Each tenant represents a customer or application with its own API key and quotas.
+The root entity for multi-tenancy. Each tenant represents a customer or application with its own API keys and quotas.
 
 | Column | Type | Constraints | Notes |
 |--------|------|-------------|-------|
 | `id` | `UUID` | PK, `uuid_generate_v4()` | System-generated |
 | `name` | `VARCHAR(255)` | NOT NULL | Display name |
-| `api_key` | `VARCHAR(255)` | UNIQUE, nullable | Legacy plaintext key (deprecated by 004) |
+| `api_key` | `VARCHAR(255)` | UNIQUE, nullable | **Legacy** plaintext key (deprecated by migration 005) |
 | `quota_rpm` | `INT` | NOT NULL, DEFAULT 60 | Requests per minute |
 | `quota_rps` | `INT` | NOT NULL, DEFAULT 0 | Requests per second (0 = unlimited) |
 | `quota_daily` | `INT` | NOT NULL, DEFAULT 0 | Requests per day (0 = unlimited) |
@@ -44,15 +99,15 @@ The root entity for multi-tenancy. Each tenant represents a customer or applicat
 | `created_at` | `TIMESTAMPTZ` | DEFAULT NOW() | |
 
 **Migration notes:**
-- `quota_rps`, `quota_daily`, `plan` added in `006_tenant_rate_limits.sql`
-- `blockchain_network_id` added in `003_multi_network.sql`
-- `api_key` made nullable in `004_api_keys.sql` (migrated to separate table)
+- `quota_rps`, `quota_daily`, `plan` added in migration 007
+- `blockchain_network_id` added in migration 003/004
+- `api_key` made nullable in migration 005 (migrated to separate table)
 
 ---
 
 ### `api_keys`
 
-Stores hashed API keys with rotation support. A tenant may have multiple keys over time (one active at a time in normal operation).
+Stores hashed API keys with rotation support. A tenant may have multiple keys over time.
 
 | Column | Type | Constraints | Notes |
 |--------|------|-------------|-------|
@@ -70,7 +125,7 @@ Stores hashed API keys with rotation support. A tenant may have multiple keys ov
 - `idx_api_keys_key_hash` — fast auth lookup (critical path)
 
 **Security model:**
-- Full API keys are never stored. Only a `bcrypt` hash and a 12-char prefix.
+- Full API keys are never stored. Only a bcrypt hash and a 12-char prefix.
 - Auth query: extract prefix → query rows matching prefix → bcrypt verify against `key_hash` → update `last_used_at`
 - Revoked keys have `revoked_at` set; auth query filters `revoked_at IS NULL`
 
@@ -106,16 +161,16 @@ Stores ingested block metadata per network. Raw JSON is kept for potential repro
 | Column | Type | Constraints | Notes |
 |--------|------|-------------|-------|
 | `number` | `BIGINT` | Part of PK | Block number |
-| `hash` | `VARCHAR(66)` | NOT NULL, UNIQUE | 0x + 64 hex chars |
+| `hash` | `VARCHAR(66)` | NOT NULL | 0x + 64 hex chars |
 | `parent_hash` | `VARCHAR(66)` | NOT NULL | Previous block hash |
 | `timestamp` | `TIMESTAMPTZ` | NOT NULL | Block time |
 | `tx_count` | `INT` | NOT NULL, DEFAULT 0 | Transaction count |
 | `raw_json` | `JSONB` | nullable | Full block JSON (optional) |
-| `network_id` | `UUID` | FK → `blockchain_configs(id)`, nullable | Added in 003 |
+| `network_id` | `UUID` | FK → `blockchain_configs(id)`, nullable | Added in migration 003/004 |
 | `created_at` | `TIMESTAMPTZ` | DEFAULT NOW() | Ingestion time |
 
 **Constraints:**
-- `blocks_number_network_key UNIQUE (number, network_id)` — allows same block number on different chains
+- `PRIMARY KEY (number, network_id)` — allows same block number on different chains (migration 003/004)
 
 **Indexes:**
 - `idx_blocks_network_id` — fast listing by network
@@ -123,6 +178,8 @@ Stores ingested block metadata per network. Raw JSON is kept for potential repro
 **Query patterns:**
 - `ORDER BY number DESC LIMIT 50` — dashboard recent blocks
 - `WHERE network_id = $1 ORDER BY number DESC LIMIT 1` — latest block per network
+
+> **Note:** The original `blocks_hash_key` UNIQUE constraint was dropped in migration 004 to allow duplicate hashes across different networks (theoretical edge case for different chains).
 
 ---
 
@@ -162,11 +219,11 @@ Raw audit trail of every gateway request. Written asynchronously; queried for st
 | `tenant_id` | `UUID` | NOT NULL, FK → `tenants(id)`, ON DELETE CASCADE | |
 | `network_id` | `UUID` | FK → `blockchain_configs(id)`, ON DELETE SET NULL | Nullable for pre-network requests |
 | `method` | `TEXT` | NOT NULL | JSON-RPC method or empty for invalid |
-| `status` | `TEXT` | NOT NULL | `success`, `rpc_error`, `upstream_error`, `invalid_request`, `network_unavailable` |
+| `status` | `TEXT` | NOT NULL | See status values below |
 | `latency_ms` | `INTEGER` | NOT NULL, DEFAULT 0 | Round-trip time |
 | `cache_hit` | `BOOLEAN` | NOT NULL, DEFAULT false | |
 | `bytes_in` | `INTEGER` | NOT NULL, DEFAULT 0 | Request body size |
-| `request_id` | `TEXT` | nullable | Tracing ID from X-Request-ID |
+| `request_id` | `TEXT` | nullable | Tracing ID from X-Request-ID (added in migration 008) |
 | `created_at` | `TIMESTAMPTZ` | NOT NULL, DEFAULT NOW() | |
 
 **Indexes:**
@@ -175,9 +232,10 @@ Raw audit trail of every gateway request. Written asynchronously; queried for st
 - `idx_request_logs_method` — method analysis
 - `idx_request_logs_status` — error analysis
 - `idx_request_logs_network_created_at DESC` — per-network history
-- `idx_request_logs_request_id` — tracing lookups
+- `idx_request_logs_request_id` — tracing lookups (added in migration 008)
 
 **Status values:**
+
 | Status | Meaning |
 |--------|---------|
 | `success` | Proxied successfully, valid JSON-RPC result |
@@ -223,7 +281,7 @@ Immutable record of admin actions and authentication events. Written synchronous
 |--------|------|-------------|-------|
 | `id` | `BIGSERIAL` | PK | Auto-increment |
 | `actor` | `TEXT` | NOT NULL | Who performed the action (e.g., "admin") |
-| `action` | `TEXT` | NOT NULL | Action type (e.g., `CREATE_TENANT`, `ADMIN_AUTH_FAILURE`) |
+| `action` | `TEXT` | NOT NULL | Action type |
 | `resource_type` | `TEXT` | NOT NULL | Category of resource affected |
 | `resource_id` | `TEXT` | nullable | Specific resource identifier |
 | `details` | `JSONB` | nullable | Structured metadata about the event |
@@ -238,6 +296,7 @@ Immutable record of admin actions and authentication events. Written synchronous
 - `idx_audit_logs_actor` — filter by actor
 
 **Recorded events:**
+
 | Action | Trigger |
 |--------|---------|
 | `ADMIN_AUTH_FAILURE` | Invalid `X-Admin-Secret` submitted |
@@ -253,19 +312,19 @@ Immutable record of admin actions and authentication events. Written synchronous
 
 ## Key Design Decisions
 
-### 1. Separate `api_keys` Table (Migration 004)
+### 1. Separate `api_keys` Table (Migration 005)
 
-**Why:** The original `tenants.api_key` stored plaintext. Migration 004:
+**Why:** The original `tenants.api_key` stored plaintext. Migration 005:
 - Made `tenants.api_key` nullable (backward compatibility)
 - Created `api_keys` with bcrypt hashed storage
 - Enables key rotation (multiple rows per tenant over time)
 - Supports multiple named keys per tenant (future-proofing)
 
-### 2. Composite Primary Key on `blocks` (Migration 003)
+### 2. Composite Primary Key on `blocks` (Migration 003/004)
 
-**Why:** Different networks can have the same block number (e.g., Ethereum mainnet block 100 ≠ Sepolia block 100). Changed from `number` PK to `(number, network_id)` unique constraint.
+**Why:** Different networks can have the same block number (e.g., Ethereum mainnet block 100 ≠ Sepolia block 100). Changed from `number` PK to `(number, network_id)` composite PK.
 
-### 3. Materialized View for Stats (Migration 008)
+### 3. Materialized View for Stats (Migration 009)
 
 **Why:** `request_logs` grows unbounded. Aggregating on every dashboard load would be O(n) on a large table. The MV reduces this to O(minutes in range) with `REFRESH CONCURRENTLY` for non-blocking updates.
 
@@ -314,10 +373,8 @@ FROM request_logs_rollup_1m
 WHERE bucket >= NOW() - INTERVAL '1 hour';
 ```
 
-### Unhealthy nodes (from health endpoint data)
+### Unhealthy nodes (ingestion gaps)
 ```sql
--- This is application-level; health state lives in memory
--- Blocks table shows ingestion gaps:
 SELECT network_id, MAX(number) as latest, COUNT(*) as total_24h
 FROM blocks
 WHERE created_at >= NOW() - INTERVAL '24 hours'
@@ -333,10 +390,18 @@ ORDER BY created_at DESC
 LIMIT 50;
 ```
 
+### Lookup API key by prefix (auth path)
+```sql
+SELECT * FROM api_keys
+WHERE key_prefix = 'bm_live_abc123'
+  AND revoked_at IS NULL;
+```
+
 ---
 
 ## Related Documents
 
-- [Architecture Overview](overview.md) — Component map and tech stack
-- [Data Flow](data-flow.md) — How data moves through the system
-- [How to Deploy](../HowToDeploy.md) — Database setup and migrations
+- [`database.xml`](database.xml) — Machine-readable schema definition
+- [`architecture/overview.md`](architecture/overview.md) — Component map and tech stack
+- [`architecture/data-flow.md`](architecture/data-flow.md) — How data moves through the system
+- [`operators/deploy.md`](operators/deploy.md) — Database setup and migrations
