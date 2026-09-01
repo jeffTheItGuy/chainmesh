@@ -8,7 +8,7 @@ import (
 	goredis "github.com/redis/go-redis/v9"
 )
 
-// Clock abstracts time.Now() so tests can control rate-limit windows.
+// Clock abstracts time.Now() 
 type Clock interface {
 	Now() time.Time
 }
@@ -118,7 +118,6 @@ func (c *Client) CheckRateLimits(
 
 	if quotaRPS > 0 {
 		rpsKey := fmt.Sprintf("rl:rps:%s:%d", tenantID, now.Unix())
-		// 2-second window for RPS
 		currentRPS, err := c.client.Eval(ctx, atomicIncrExpireScript, []string{rpsKey}, "2").Int64()
 		if err != nil {
 			return false, status, fmt.Errorf("rps incr failed: %w", err)
@@ -133,7 +132,6 @@ func (c *Client) CheckRateLimits(
 
 	if quotaRPM > 0 {
 		minuteKey := fmt.Sprintf("rl:min:%s:%s", tenantID, now.Format("2006-01-02T15:04"))
-		// 2-minute window for per-minute limit (generous cleanup margin)
 		currentMinute, err := c.client.Eval(ctx, atomicIncrExpireScript, []string{minuteKey}, "120").Int64()
 		if err != nil {
 			return false, status, fmt.Errorf("rpm incr failed: %w", err)
@@ -162,7 +160,6 @@ func (c *Client) CheckRateLimits(
 
 	if quotaDaily > 0 {
 		dayKey := fmt.Sprintf("rl:day:%s:%s", tenantID, now.Format("2006-01-02"))
-		// 25-hour window for daily limit (handles DST edge cases)
 		currentDay, err := c.client.Eval(ctx, atomicIncrExpireScript, []string{dayKey}, "90000").Int64()
 		if err != nil {
 			return false, status, fmt.Errorf("daily incr failed: %w", err)

@@ -9,9 +9,7 @@ import (
 	"github.com/jeffTheItGuy/chainmesh/shared/storage/postgres"
 )
 
-// Refresher periodically refreshes the stats materialized view.
-//
-// This keeps dashboard queries fast as request_logs grows.
+// Refresher periodically refreshes the stats materialized view
 type Refresher struct {
 	db       *postgres.DB
 	log      *slog.Logger

@@ -29,7 +29,6 @@ WHERE tenant_id = $1 AND DATE(period) = DATE($2)`,
 	}
 	defer rows.Close()
 
-	// FIX: Initialize as empty slice so JSON marshals to [] instead of null
 	out := make([]model.Usage, 0)
 	for rows.Next() {
 		var u model.Usage

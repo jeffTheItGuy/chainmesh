@@ -40,7 +40,7 @@ Violations may result removal from the project community.
 
 | Tool | Version | Purpose |
 |------|---------|---------|
-| [Go](https://golang.org/dl/) | 1.22+ | Backend services |
+| [Go](https://golang.org/dl/) | 1.25+ | Backend services |
 | [Node.js](https://nodejs.org/) | 20+ | Frontend tooling |
 | [PostgreSQL](https://postgresql.org/) | 15+ | Primary database |
 | [Redis](https://redis.io/) | 7+ | Caching & rate limiting |
@@ -118,39 +118,6 @@ npm run dev
 ```
 
 For full setup details, see [Developer Setup Guide](setup.md).
-
----
-
-## Project Structure
-
-```
-blockmesh/
-├── backend/
-│   ├── gateway/              # Public JSON-RPC proxy (:8080)
-│   ├── admin/                # Management API (:8081)
-│   ├── ingestor/             # Block indexer
-│   ├── shared/               # Common packages
-│   │   ├── blockchain/       # JSON-RPC client with health checks
-│   │   ├── logger/           # Structured logging (slog)
-│   │   ├── metrics/          # Prometheus instrumentations
-│   │   ├── model/            # Data structures
-│   │   ├── requestid/        # Context-scoped request IDs
-│   │   ├── statsrollup/      # Materialized view refresher
-│   │   ├── storage/          # Postgres & Redis clients
-│   │   ├── telemetry/        # Async usage recording
-│   │   └── util/             # API key generation, hashing
-│   ├── database/migrations/  # Schema evolution SQL
-│   └── api/openapi.yaml      # OpenAPI 3.0 specification
-│
-├── frontend/                 # React dashboard
-│   ├── src/
-│   ├── package.json
-│   ├── vite.config.ts
-│   └── Dockerfile
-│
-├── docs/                     # Documentation
-└── docker-compose.yml        # Full stack orchestration
-```
 
 ---
 

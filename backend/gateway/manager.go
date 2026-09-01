@@ -46,11 +46,6 @@ func (m *Manager) Start(ctx context.Context) error {
 		return err
 	}
 
-	// FIX: Allow the gateway to start even if no blockchain networks are configured yet.
-	// This prevents a chicken-and-egg problem where you can't access the Admin UI
-	// to add a network because the gateway refuses to start without one.
-	// The proxy layer already handles missing networks gracefully by returning
-	// a 503 Service Unavailable error to clients if a request comes in.
 	go m.loop()
 	return nil
 }

@@ -10,8 +10,7 @@ import (
 
 type tenantKey struct{}
 
-// tenantResolver is the subset of postgres.DB required by Auth.
-// Using an interface lets us unit-test middleware without a real database.
+// tenantResolver interface
 type tenantResolver interface {
 	GetTenantByAPIKey(ctx context.Context, key string) (*model.Tenant, error)
 }

@@ -25,7 +25,7 @@ tags:
     description: Block ingestion data
 
 paths:
-  # ─── Gateway ───────────────────────────────────────────────────────────────
+  # Gateway
   /v1/:
     post:
       tags: [Gateway]
@@ -86,7 +86,7 @@ paths:
                 items:
                   $ref: "#/components/schemas/NetworkHealth"
 
-  # ─── Admin — Health ────────────────────────────────────────────────────────
+  # Admin — Health
   /health:
     get:
       tags: [Admin — Health]
@@ -107,7 +107,7 @@ paths:
         "403":
           description: Invalid or missing admin secret
 
-  # ─── Admin — Stats ───────────────────────────────────────────────────────────
+  # Admin — Stats 
   /stats/summary:
     get:
       tags: [Admin — Stats]
@@ -133,7 +133,7 @@ paths:
         "403":
           description: Forbidden
 
-  # ─── Admin — Tenants ───────────────────────────────────────────────────────
+  # Admin — Tenants
   /tenants:
     get:
       tags: [Admin — Tenants]
@@ -306,7 +306,7 @@ paths:
         "403":
           description: Forbidden
 
-  # ─── Admin — Blockchain ────────────────────────────────────────────────────
+  # Admin — Blockchain 
   /blockchain:
     get:
       tags: [Admin — Blockchain]
@@ -453,7 +453,7 @@ paths:
         "403":
           description: Forbidden
 
-  # ─── Admin — Blocks ────────────────────────────────────────────────────────
+  # Admin — Blocks
   /blocks:
     get:
       tags: [Admin — Blocks]

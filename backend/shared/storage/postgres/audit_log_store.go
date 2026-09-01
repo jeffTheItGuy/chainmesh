@@ -7,7 +7,6 @@ import (
 )
 
 func (d *DB) RecordAuditLog(ctx context.Context, log *model.AuditLog) error {
-	// Handle empty IPAddress — INET column rejects empty strings
 	var ipAddress any
 	if log.IPAddress != "" {
 		ipAddress = log.IPAddress

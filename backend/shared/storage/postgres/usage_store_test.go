@@ -10,7 +10,6 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/jeffTheItGuy/chainmesh/shared/model"
-	// remove this line: "github.com/jeffTheItGuy/chainmesh/shared/util"
 )
 
 const usageTenantID = "880e8400-e29b-41d4-a716-446655440001"
@@ -31,14 +30,12 @@ CREATE TABLE IF NOT EXISTS usage (
 `)
 	require.NoError(t, err)
 
-	// Seed a tenant to satisfy FK
 	_, err = db.pool.Exec(ctx,
 		`INSERT INTO tenants (id, name) VALUES ($1, 'UsageTestTenant') ON CONFLICT (id) DO NOTHING`,
 		usageTenantID,
 	)
 	require.NoError(t, err)
 
-	// Clean up
 	_, _ = db.pool.Exec(ctx, `DELETE FROM usage WHERE tenant_id = $1`, usageTenantID)
 
 	period := time.Now().Truncate(time.Minute)
@@ -53,7 +50,7 @@ CREATE TABLE IF NOT EXISTS usage (
 	err = db.RecordUsage(ctx, u)
 	require.NoError(t, err)
 
-	// Upsert
+
 	u.Count = 3
 	u.BytesIn = 50
 	err = db.RecordUsage(ctx, u)

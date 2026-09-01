@@ -112,16 +112,16 @@ X-Request-ID: <generated-or-provided>
 
 ```
 Proxy ──enqueue──▶ Telemetry.Recorder.queue (bounded channel)
-                         │
-                         ▼
-                    Worker goroutine
-                         │
-              ┌─────────┴─────────┐
-              ▼                   ▼
-       RecordUsage()        RecordRequestLog()
-              │                   │
-              ▼                   ▼
-       usage table         request_logs table
+                          │
+                          ▼
+                     Worker goroutine
+                          │
+                ┌─────────┴─────────┐
+                ▼                   ▼
+        RecordUsage()        RecordRequestLog()
+                │                   │
+                ▼                   ▼
+        usage table         request_logs table
 ```
 
 ### Behavior
@@ -249,51 +249,94 @@ Request ──▶ adminAuth() ──▶ X-Admin-Secret header
 ### Tenant Creation Flow
 
 ```
-POST /tenants
-├── Validate: name required
-├── Set defaults: plan="free", quota_rpm=100, quota_rps=10, quota_daily=10000
-├── Resolve network: use provided ID, or default network, or error
-├── GenerateAPIKey(): bm_live_<32-char-hex>
-├── Transaction:
-│   ├── INSERT tenant
-│   └── INSERT api_keys (bcrypt hash, prefix)
-├── auditLog(): CREATE_TENANT ──▶ audit_logs table
-└── Return: tenant + plaintext api_key (shown ONCE)
+POST /tenants:
+
+                Validate: name required
+                        │
+                        ▼
+                Set defaults: plan="free", quota_rpm=100, quota_rps=10, quota_daily=10000
+                        │
+                        ▼
+                Resolve network: use provided ID, or default network, or error
+                        │
+                        ▼
+                GenerateAPIKey(): bm_live_<32-char-hex>
+
+
+
+Transaction:
+
+                INSERT tenant
+                        │
+                        ▼
+                INSERT api_keys (bcrypt hash, prefix)
+                        │
+                        ▼
+                auditLog(): CREATE_TENANT ──▶ audit_logs table
+                        │
+                        ▼
+                Return: tenant + plaintext api_key (shown ONCE)
 ```
 
 ### Stats Query Flow
 
 ```
 GET /stats/summary?range=1h
-├── Parse range (15m, 1h, 24h)
-├── Calculate `from` timestamp
-├── If from > 5 minutes ago:
-│   └── Query request_logs_rollup_1m (fast)
-├── Else:
-│   └── Query request_logs directly (accurate for recent data)
-└── Return: totals, latency (avg/p95), top methods/networks/statuses, time series
+                Parse range (15m, 1h, 24h)
+                        │
+                        ▼
+                Calculate `from` timestamp
+                        │
+                        ▼
+                If from > 5 minutes ago:
+                        │
+                        ▼
+                Query request_logs_rollup_1m (fast)
+                        │
+                        └── Else: Query request_logs directly (accurate for recent data)
+                        │
+                        ▼
+                Return: totals, latency (avg/p95), top methods/networks/statuses, time series
 ```
 
 ### Audit Log Query Flow
 
 ```
 GET /audit-logs?limit=50&offset=0
-├── Validate admin auth
-├── Parse limit (max 1000) and offset
-├── Query audit_logs ORDER BY created_at DESC
-└── Return: array of audit events
+                        │
+                        ▼
+                Validate admin auth
+                        │
+                        ▼                
+                Parse limit (max 1000) and offset
+                        │
+                        ▼                
+                Query audit_logs ORDER BY created_at DESC
+                        │
+                        ▼                
+                Return: array of audit events
 ```
 
 ### Blockchain Config Creation Flow
 
 ```
 POST /blockchain
-├── Validate admin auth
-├── Validate: name and rpc_endpoint_1 required
-├── SSRF check: ValidateRPCEndpoint() rejects loopback/private/link-local IPs
-├── SaveBlockchainConfig()
-├── auditLog(): CREATE_BLOCKCHAIN_CONFIG ──▶ audit_logs table
-└── Return: created config
+                Validate admin auth
+                        │
+                        ▼                
+                Validate: name and rpc_endpoint_1 required
+                        │
+                        ▼                
+                SSRF check: ValidateRPCEndpoint() rejects loopback/private/link-local IPs
+                        │
+                        ▼                
+                SaveBlockchainConfig()
+                        │
+                        ▼                
+                auditLog(): CREATE_BLOCKCHAIN_CONFIG ──▶ audit_logs table
+                        │
+                        ▼                
+                Return: created config
 ```
 
 ---

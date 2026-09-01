@@ -73,7 +73,7 @@ func TestCheckRateLimits_DisabledTier(t *testing.T) {
 	ctx := context.Background()
 	tenant := "tenant-disabled"
 
-	// quota=0 means disabled — should never reject for that tier
+	// quota=0 means disabled
 	allowed, _, err := c.CheckRateLimits(ctx, tenant, 0, 0, 0)
 	require.NoError(t, err)
 	assert.True(t, allowed)

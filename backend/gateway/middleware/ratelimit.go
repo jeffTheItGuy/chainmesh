@@ -12,7 +12,6 @@ func RateLimit(cache *redis.Client) func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			tenant := TenantFromContext(r.Context())
-			// FIX: Defense-in-depth: never bypass rate limiting when tenant is missing
 			if tenant == nil {
 				w.Header().Set("Content-Type", "application/json")
 				http.Error(w, `{"error":"unauthorized"}`, http.StatusUnauthorized)

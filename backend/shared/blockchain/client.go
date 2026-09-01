@@ -17,7 +17,7 @@ import (
 	"github.com/jeffTheItGuy/chainmesh/shared/requestid"
 )
 
-// EndpointHealth holds real-time health and latency data for a single RPC endpoint.
+// EndpointHealth
 type EndpointHealth struct {
 	URL              string        `json:"url"`
 	Healthy          bool          `json:"healthy"`
@@ -28,9 +28,6 @@ type EndpointHealth struct {
 	TotalFailures    int64         `json:"total_failures"`
 }
 
-// Client is a health-aware JSON-RPC client that supports multiple upstream
-// endpoints, periodic health checks, automatic failover, and fastest-node
-// selection.
 type Client struct {
 	endpoints     []string
 	http          *http.Client
@@ -43,7 +40,7 @@ type Client struct {
 	checkWg       sync.WaitGroup
 }
 
-// New creates a new blockchain RPC client.
+// Creates a new blockchain RPC client.
 func New(endpoints []string) *Client {
 	health := make(map[string]*EndpointHealth, len(endpoints))
 	for _, ep := range endpoints {
@@ -58,13 +55,12 @@ func New(endpoints []string) *Client {
 	}
 }
 
-// SetNetworkID sets the network label used in metrics and logs.
+
 func (c *Client) SetNetworkID(networkID string) {
 	c.networkID = networkID
 }
 
-// StartHealthChecks begins a background goroutine that probes every endpoint
-// at the given interval.
+
 func (c *Client) StartHealthChecks(ctx context.Context, interval time.Duration) {
 	c.checkInterval = interval
 	ctx, cancel := context.WithCancel(ctx)
@@ -87,7 +83,7 @@ func (c *Client) StartHealthChecks(ctx context.Context, interval time.Duration) 
 	}()
 }
 
-// StopHealthChecks gracefully stops the background health-check goroutine.
+// stops the background health-check goroutine.
 func (c *Client) StopHealthChecks() {
 	if c.checkCancel != nil {
 		c.checkCancel()
@@ -95,8 +91,7 @@ func (c *Client) StopHealthChecks() {
 	}
 }
 
-// HealthyEndpoints returns a snapshot of the current health state for all
-// configured endpoints.
+// Returns a snapshot of the current health state for all
 func (c *Client) HealthyEndpoints() []EndpointHealth {
 	c.healthMu.RLock()
 	defer c.healthMu.RUnlock()
@@ -156,7 +151,6 @@ func (c *Client) runHealthCheck(ctx context.Context) {
 				return
 			}
 
-			// FIX: Reject non-2xx status codes
 			if resp.StatusCode < 200 || resp.StatusCode >= 300 {
 				io.Copy(io.Discard, resp.Body)
 				resp.Body.Close()
@@ -179,7 +173,7 @@ func (c *Client) runHealthCheck(ctx context.Context) {
 			body, _ := io.ReadAll(resp.Body)
 			resp.Body.Close()
 
-			// FIX: Validate JSON-RPC body before marking healthy
+			// Validate JSON-RPC body before marking healthy
 			var rpcResp RPCResponse
 			if err := json.Unmarshal(body, &rpcResp); err != nil || rpcResp.Error != nil {
 				h.ConsecutiveFails++
@@ -208,7 +202,7 @@ func (c *Client) runHealthCheck(ctx context.Context) {
 	wg.Wait()
 }
 
-// Call executes the JSON-RPC method against the best available endpoint.
+// Executes the JSON-RPC method against the best available endpoint.
 func (c *Client) Call(ctx context.Context, method string, params ...any) (json.RawMessage, error) {
 	requestID := requestid.FromContext(ctx)
 	log := c.log.With(
@@ -278,8 +272,6 @@ func (c *Client) Call(ctx context.Context, method string, params ...any) (json.R
 			method,
 		).Observe(latency.Seconds())
 
-		// An RPC-level error is still a valid node response.
-		// The node is alive, so we mark success but label the upstream status.
 		if rpcResp.Error != nil {
 			metrics.UpstreamRequestsTotal.WithLabelValues(
 				c.networkID,
@@ -303,9 +295,8 @@ func (c *Client) Call(ctx context.Context, method string, params ...any) (json.R
 	return nil, fmt.Errorf("all endpoints failed")
 }
 
-// ProxyRaw forwards a raw JSON-RPC payload (single or batch) to the best
-// available endpoint and returns the raw response body. This is used by the
-// gateway proxy to support JSON-RPC batch requests without re-serialization.
+// ProxyRaw forwards a raw JSON-RPC payload to the best 
+// available endpoint and returns the raw response body. 
 func (c *Client) ProxyRaw(ctx context.Context, body []byte) ([]byte, error) {
 	requestID := requestid.FromContext(ctx)
 	log := c.log.With(

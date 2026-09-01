@@ -73,11 +73,11 @@ Client Request
        │
    ┌───┴───┐
    ▼       ▼
- 401     429    ← Auth / Rate limit failure
+ 401      429    ← Auth / Rate limit failure
    │       │
    ▼       ▼
 ┌─────────────────┐
-│   Proxy Handler  │
+│   Proxy Handler │
 └───────┬─────────┘
         │
    ┌────┴────┬────────┐
@@ -86,7 +86,7 @@ Client Request
    │         │        │
    ▼         ▼        ▼
 ┌─────────────────────────┐
-│   Upstream RPC Call      │
+│   Upstream RPC Call     │
 └───────────┬─────────────┘
             │
        ┌────┴────┐

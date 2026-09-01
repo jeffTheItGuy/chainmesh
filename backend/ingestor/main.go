@@ -94,18 +94,11 @@ func fetchAndStore(
 	db *postgres.DB,
 	log *slog.Logger,
 ) error {
-	// FIX: Use `false` instead of `true` for the second parameter.
-	// Public RPC nodes often reject `true` (full transaction objects) because
-	// the response is too large. We only need the transaction count, so
-	// returning just the transaction hashes is sufficient and universally supported.
 	resp, err := bc.Call(ctx, "eth_getBlockByNumber", "latest", false)
 	if err != nil {
 		return err
 	}
 
-	// FIX: Check for RPC-level errors before trying to parse the result.
-	// This prevents the confusing "unexpected end of JSON input" error when
-	// the node returns an error response instead of a block.
 	var rpcResp blockchain.RPCResponse
 	if err := json.Unmarshal(resp, &rpcResp); err != nil {
 		return fmt.Errorf("invalid rpc response: %w", err)

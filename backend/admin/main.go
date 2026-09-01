@@ -61,11 +61,11 @@ func main() {
 	srv.Shutdown(ctx)
 }
 
-// newAdminMux returns a ServeMux with all admin routes.
+// returns a ServeMux with all admin routes
 func newAdminMux(secret string, db *postgres.DB, log *slog.Logger) *http.ServeMux {
 	mux := http.NewServeMux()
 
-	// Health check – no auth required
+	// Health check
 	mux.HandleFunc("GET /health", func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		json.NewEncoder(w).Encode(map[string]string{"status": "ok"})
@@ -84,7 +84,7 @@ func newAdminMux(secret string, db *postgres.DB, log *slog.Logger) *http.ServeMu
 		}
 	}
 
-	// ─── Tenants ─────────────────────────────────────────────────────────────
+	// Tenants 
 
 	mux.HandleFunc("GET /tenants", auth(func(w http.ResponseWriter, r *http.Request) {
 		tenants, err := db.ListTenants(r.Context())
@@ -125,7 +125,7 @@ func newAdminMux(secret string, db *postgres.DB, log *slog.Logger) *http.ServeMu
 			return
 		}
 
-		// Record audit log so TestAuditLogs has something to find
+		// Records audit log
 		_ = db.RecordAuditLog(r.Context(), &model.AuditLog{
 			Actor:        "admin",
 			Action:       "CREATE_TENANT",
@@ -199,7 +199,7 @@ func newAdminMux(secret string, db *postgres.DB, log *slog.Logger) *http.ServeMu
 		json.NewEncoder(w).Encode(usage)
 	}))
 
-	// ─── Blockchain configs ─────────────────────────────────────────────────
+	//Blockchain configs
 
 	mux.HandleFunc("GET /blockchain", auth(func(w http.ResponseWriter, r *http.Request) {
 		configs, err := db.ListBlockchainConfigs(r.Context())
@@ -260,7 +260,7 @@ func newAdminMux(secret string, db *postgres.DB, log *slog.Logger) *http.ServeMu
 		json.NewEncoder(w).Encode(map[string]bool{"deleted": true})
 	}))
 
-	// ─── Stats ───────────────────────────────────────────────────────────────
+	// Stats 
 
 	mux.HandleFunc("GET /stats/summary", auth(func(w http.ResponseWriter, r *http.Request) {
 		rangeParam := r.URL.Query().Get("range")
@@ -293,9 +293,9 @@ func newAdminMux(secret string, db *postgres.DB, log *slog.Logger) *http.ServeMu
 		json.NewEncoder(w).Encode(summary)
 	}))
 
-	// ─── Blocks ──────────────────────────────────────────────────────────────
+	// Blocks 
 
-	// ✅ Public endpoint: both viewers and admins can see recent blocks
+	// Both viewers and admins can see recent blocks
 	mux.HandleFunc("GET /blocks", func(w http.ResponseWriter, r *http.Request) {
 		blocks, err := db.ListBlocks(r.Context(), 50)
 		if err != nil {
@@ -305,7 +305,7 @@ func newAdminMux(secret string, db *postgres.DB, log *slog.Logger) *http.ServeMu
 		json.NewEncoder(w).Encode(blocks)
 	})
 
-	// ─── Audit Logs ──────────────────────────────────────────────────────────
+	//Audit Logs
 
 	mux.HandleFunc("GET /audit-logs", auth(func(w http.ResponseWriter, r *http.Request) {
 		limitStr := r.URL.Query().Get("limit")

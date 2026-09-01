@@ -63,7 +63,7 @@ curl -X POST http://localhost:8081/tenants \
 }
 ```
 
-**Important:** The `api_key` is returned **only at creation**. Store it securely — it cannot be retrieved later.
+**Important:** The `api_key` is returned **only at creation**. Store it securely. It cannot be retrieved later.
 
 ---
 
@@ -174,7 +174,7 @@ If a key is compromised or you need to rotate credentials:
 1. Find the tenant in the Tenants table
 2. Click **Rotate**
 3. Confirm the rotation
-4. **Copy the new key immediately** — shown only once
+4. **Copy the new key immediately** (shown only once)
 
 ### API
 
@@ -191,7 +191,7 @@ curl -X POST http://localhost:8081/tenants/<tenant-id>/rotate-key \
 **Behavior:**
 - All previous active keys for this tenant are revoked immediately
 - The new key is shown exactly once
-- There is **no grace period** — old keys stop working instantly
+- There is **no grace period** (old keys stop working instantly)
 
 ---
 

@@ -8,11 +8,8 @@ import (
 )
 
 // ValidateRPCEndpoint ensures an RPC URL is safe to dial from the server.
-// It blocks non-http(s) schemes and resolves hostnames to confirm they do
-// not point to restricted IP ranges.
+
 func ValidateRPCEndpoint(endpoint string) error {
-	// FIX: Allow test environments to bypass SSRF checks for internal mock
-	// endpoints (e.g. httptest servers inside Docker compose networks).
 	if os.Getenv("BLOCKMESH_SKIP_SSRF") == "1" {
 		return nil
 	}
@@ -31,7 +28,6 @@ func ValidateRPCEndpoint(endpoint string) error {
 		return fmt.Errorf("missing host")
 	}
 
-	// If the host is already an IP literal, check it directly.
 	if ip := net.ParseIP(host); ip != nil {
 		if isRestrictedIP(ip) {
 			return fmt.Errorf("restricted ip address")
@@ -39,7 +35,6 @@ func ValidateRPCEndpoint(endpoint string) error {
 		return nil
 	}
 
-	// Resolve hostname and validate all returned IPs.
 	ips, err := net.LookupIP(host)
 	if err != nil {
 		return fmt.Errorf("cannot resolve host")

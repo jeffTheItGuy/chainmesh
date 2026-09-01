@@ -69,26 +69,22 @@ WHERE id = $6`,
 }
 
 func (d *DB) DeleteBlockchainConfig(ctx context.Context, id string) error {
-	// FIX: Use a transaction to unlink dependent records first, avoiding FK violations.
 	tx, err := d.pool.Begin(ctx)
 	if err != nil {
 		return err
 	}
 	defer tx.Rollback(ctx)
 
-	// 1. Unlink tenants referencing this network
 	_, err = tx.Exec(ctx, `UPDATE tenants SET blockchain_network_id = NULL WHERE blockchain_network_id = $1`, id)
 	if err != nil {
 		return err
 	}
 
-	// 2. Unlink blocks referencing this network
 	_, err = tx.Exec(ctx, `UPDATE blocks SET network_id = NULL WHERE network_id = $1`, id)
 	if err != nil {
 		return err
 	}
 
-	// 3. Now it is safe to delete the network config
 	_, err = tx.Exec(ctx, `DELETE FROM blockchain_configs WHERE id = $1`, id)
 	if err != nil {
 		return err
