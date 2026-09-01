@@ -3,12 +3,13 @@ package redis
 import (
 	"context"
 	"fmt"
+	"os"
 	"time"
 
 	goredis "github.com/redis/go-redis/v9"
 )
 
-// Clock abstracts time.Now() 
+// Clock abstracts time.Now()
 type Clock interface {
 	Now() time.Time
 }
@@ -31,16 +32,32 @@ type RateLimitStatus struct {
 }
 
 func New(addr string) *Client {
+	opts := &goredis.Options{
+		Addr: addr,
+	}
+
+	if password := os.Getenv("REDIS_PASSWORD"); password != "" {
+		opts.Password = password
+	}
+
 	return &Client{
-		client: goredis.NewClient(&goredis.Options{Addr: addr}),
+		client: goredis.NewClient(opts),
 		clock:  realClock{},
 	}
 }
 
 // NewWithClock creates a Client with an injectable clock for testing.
 func NewWithClock(addr string, clock Clock) *Client {
+	opts := &goredis.Options{
+		Addr: addr,
+	}
+
+	if password := os.Getenv("REDIS_PASSWORD"); password != "" {
+		opts.Password = password
+	}
+
 	return &Client{
-		client: goredis.NewClient(&goredis.Options{Addr: addr}),
+		client: goredis.NewClient(opts),
 		clock:  clock,
 	}
 }
