@@ -82,23 +82,24 @@ func main() {
 	}
 	defer manager.Stop()
 
+	// In-memory tenant cache: avoids bcrypt + Postgres on every request.
+	// 5-minute TTL is the standard trade-off for API gateways.
+	tenantCache := middleware.NewTenantCache(5 * time.Minute)
+
 	p := proxy.New(manager, db, cache, log, telemetryRecorder)
 
 	handler := middleware.RequestID(
-		middleware.Auth(db)(
+		middleware.Auth(db, tenantCache)(
 			middleware.RateLimit(cache)(p),
 		),
 	)
 
 	mux := http.NewServeMux()
 	mux.Handle("/v1/", handler)
-
 	mux.HandleFunc("/health/nodes", func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
-
 		health := manager.Health()
 		safeHealth := make([]SafeNetworkHealth, len(health))
-
 		for i, net := range health {
 			safeNodes := make([]SafeEndpointHealth, len(net.Nodes))
 			for j, node := range net.Nodes {
@@ -117,7 +118,6 @@ func main() {
 				Nodes:     safeNodes,
 			}
 		}
-
 		json.NewEncoder(w).Encode(safeHealth)
 	})
 
@@ -155,7 +155,6 @@ func main() {
 	defer shutdownCancel()
 	srv.Shutdown(shutdownCtx)
 }
-
 
 func seedDefaultConfig(ctx context.Context, db *postgres.DB) error {
 	if cfg, err := db.GetDefaultBlockchainConfig(ctx); err == nil && cfg != nil {

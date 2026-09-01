@@ -164,7 +164,7 @@ func TestProxy_MalformedRequestsDoNotPanic(t *testing.T) {
 	require.NoError(t, err)
 
 	p := New(&panicMockManager{}, db, cache, logger.New(), rec)
-	handler := middleware.Auth(db)(p)
+	handler := middleware.Auth(db, nil)(p)
 
 	tests := []struct {
 		name       string
@@ -239,7 +239,7 @@ func TestProxy_CacheHit(t *testing.T) {
 	mgr := &mockNetworkManager{client: bc, ok: true}
 
 	p := New(mgr, db, cache, logger.New(), rec)
-	handler := middleware.Auth(db)(p)
+	handler := middleware.Auth(db, nil)(p)
 
 	req := httptest.NewRequest("POST", "/v1/", bytes.NewBufferString(`{"jsonrpc":"2.0","method":"eth_chainId","params":[],"id":1}`))
 	req.Header.Set("Authorization", "Bearer "+apiKey)
@@ -284,7 +284,7 @@ func TestProxy_CacheMissUpstreamSuccess(t *testing.T) {
 	mgr := &mockNetworkManager{client: bc, ok: true}
 
 	p := New(mgr, db, cache, logger.New(), rec)
-	handler := middleware.Auth(db)(p)
+	handler := middleware.Auth(db, nil)(p)
 
 	req := httptest.NewRequest("POST", "/v1/", bytes.NewBufferString(`{"jsonrpc":"2.0","method":"eth_chainId","params":[],"id":1}`))
 	req.Header.Set("Authorization", "Bearer "+apiKey)
@@ -323,7 +323,7 @@ func TestProxy_NetworkUnavailable(t *testing.T) {
 	mgr := &mockNetworkManager{ok: false}
 
 	p := New(mgr, db, cache, logger.New(), rec)
-	handler := middleware.Auth(db)(p)
+	handler := middleware.Auth(db, nil)(p)
 
 	req := httptest.NewRequest("POST", "/v1/", bytes.NewBufferString(`{"jsonrpc":"2.0","method":"eth_chainId","params":[],"id":1}`))
 	req.Header.Set("Authorization", "Bearer "+apiKey)
@@ -359,7 +359,7 @@ func TestProxy_UpstreamError(t *testing.T) {
 	mgr := &mockNetworkManager{client: bc, ok: true}
 
 	p := New(mgr, db, cache, logger.New(), rec)
-	handler := middleware.Auth(db)(p)
+	handler := middleware.Auth(db, nil)(p)
 
 	req := httptest.NewRequest("POST", "/v1/", bytes.NewBufferString(`{"jsonrpc":"2.0","method":"eth_chainId","params":[],"id":1}`))
 	req.Header.Set("Authorization", "Bearer "+apiKey)
@@ -403,7 +403,7 @@ func TestProxy_RPCErrorResponse(t *testing.T) {
 	mgr := &mockNetworkManager{client: bc, ok: true}
 
 	p := New(mgr, db, cache, logger.New(), rec)
-	handler := middleware.Auth(db)(p)
+	handler := middleware.Auth(db, nil)(p)
 
 	req := httptest.NewRequest("POST", "/v1/", bytes.NewBufferString(`{"jsonrpc":"2.0","method":"eth_call","params":[],"id":1}`))
 	req.Header.Set("Authorization", "Bearer "+apiKey)
@@ -455,7 +455,7 @@ func TestProxy_CacheStampede(t *testing.T) {
 	mgr := &mockNetworkManager{client: bc, ok: true}
 
 	p := New(mgr, db, cache, logger.New(), rec)
-	handler := middleware.Auth(db)(p)
+	handler := middleware.Auth(db, nil)(p)
 
 	// Fire 10 concurrent requests at a completely cold cache
 	var wg sync.WaitGroup
@@ -523,7 +523,7 @@ func TestProxy_TelemetryFallback(t *testing.T) {
 
 	// Pass nil telemetry to force the synchronous fallback goroutine path
 	p := New(mgr, db, cache, logger.New(), nil)
-	handler := middleware.Auth(db)(p)
+	handler := middleware.Auth(db, nil)(p)
 
 	req := httptest.NewRequest("POST", "/v1/", bytes.NewBufferString(`{"jsonrpc":"2.0","method":"eth_chainId","params":[],"id":1}`))
 	req.Header.Set("Authorization", "Bearer "+apiKey)
