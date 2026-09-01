@@ -1,23 +1,25 @@
 namespace: chainmesh
 replicaCount: 1
+
 image:
   repository: chainmesh-admin
   tag: ""
   pullPolicy: Never
+
 service:
   port: 8081
   type: ClusterIP
-ingress:
-  className: traefik
-  host: admin.chainmesh.nimbusurf.com
-  path: /
-  tlsSecretName: chainmesh-nimbusurf-tls
+
+# [INGRESS BLOCK REMOVED]
+
 envFrom:
   - secretRef:
       name: chainmesh-secrets
+
 env:
   PORT: "8081"
   POSTGRES_DB: "chainmesh"
+
 resources:
   limits:
     cpu: "300m"
@@ -25,11 +27,13 @@ resources:
   requests:
     cpu: "50m"
     memory: "128Mi"
+
 securityContext:
   runAsNonRoot: true
   runAsUser: 1000
   runAsGroup: 1000
   fsGroup: 1000
+
 networkPolicy:
   allowedFrom:
     - app: chainmesh-web

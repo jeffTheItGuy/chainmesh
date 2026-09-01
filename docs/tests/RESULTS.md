@@ -1,8 +1,10 @@
 # Test Results Summary
 
-> **Last updated:** 2026-08-27
+> **Last updated:** 2026-09-01
 >
 > Unit-test suite and integration suite are both green. No zero-result or failing tests remain in either.
+>
+> Latest in-cluster smoke test passed 6/6.
 
 ---
 
@@ -13,7 +15,7 @@
 | Backend Unit | ✅ All pass | 71 tests across 10 packages |
 | Frontend Unit | ✅ All pass | 8 tests across 4 files |
 | Integration | ✅ All pass | 30 tests pass, 71.2s runtime |
-| Post-Production Smoke | ⏳ Pending | Runs against live deployments only |
+| Post-Production Smoke | ✅ Pass | 6/6 in-cluster smoke checks passed on 2026-09-01 |
 
 ---
 
@@ -62,9 +64,26 @@ Full output: see CI job artifact / `integration-full.log` (not pasted here per U
 
 ---
 
+## In-Cluster Smoke Test Results — 2026-09-01
+
+✅ **ChainMesh Smoke Test — in-cluster**
+
+Namespace: `chainmesh` · Gateway svc: `chainmesh-gateway-svc` · Passed: **6/6**
+
+| Check | Status | Detail |
+|------|--------|--------|
+| Gateway reachable | ✅ Pass | HTTP 401 |
+| Authenticated RPC | ✅ Pass | returned result |
+| Cache MISS (1st call) | ✅ Pass | `X-Cache: MISS` |
+| Cache HIT (2nd call) | ✅ Pass | `X-Cache: HIT` |
+| Rate limit headers | ✅ Pass | present |
+| Web dashboard | ✅ Pass | HTTP 200 |
+
+---
+
 ## Failing Tests
 
-None — across unit and integration suites.
+None — across unit, integration, and latest in-cluster smoke suites.
 
 ---
 
@@ -75,9 +94,9 @@ Instead of a coverage %, this tracks whether the areas that actually matter have
 | Area | Dedicated Tests | Status |
 |------|-----------------|--------|
 | Auth / API key validation | Unit (`gateway/middleware`) + Integration (`TestInvalidAPIKeyRejected`, `TestGatewayRPCInvalidKey`) | ✅ Tested |
-| Rate limiting (enforce / quota / reset) | Unit (`shared/storage/redis`) + Integration (`TestRateLimitEnforced`, `TestRateLimitDailyQuota`, `TestRateLimitResets`) | ✅ Tested |
-| RPC routing & batch requests | Unit (`gateway/proxy`) + Integration (`TestGatewayRPCMethods`, `TestGatewayBatchRequest`) | ✅ Tested |
-| Caching (hit/miss, auth interplay) | Unit (`gateway/proxy`) + Integration (`TestCacheHitHeader`, `TestCacheDoesNotInterfereWithAuth`) | ✅ Tested |
+| Rate limiting (enforce / quota / reset) | Unit (`shared/storage/redis`) + Integration (`TestRateLimitEnforced`, `TestRateLimitDailyQuota`, `TestRateLimitResets`) + Smoke (`Rate limit headers`) | ✅ Tested |
+| RPC routing & batch requests | Unit (`gateway/proxy`) + Integration (`TestGatewayRPCMethods`, `TestGatewayBatchRequest`) + Smoke (`Authenticated RPC`) | ✅ Tested |
+| Caching (hit/miss, auth interplay) | Unit (`gateway/proxy`) + Integration (`TestCacheHitHeader`, `TestCacheDoesNotInterfereWithAuth`) + Smoke (`Cache MISS`, `Cache HIT`) | ✅ Tested |
 | SSRF / private IP protection | Unit (`shared/util`) + Integration (`TestSSRFProtection`, `TestPrivateIPBlocked`) | ✅ Tested |
 | Admin auth & audit logging | Unit (`admin`) + Integration (`TestMissingAdminSecretRejected`, `TestAuditLogs`) | ✅ Tested |
 | Tenant lifecycle (create / list / delete / validate) | Unit (`admin`) + Integration (`TestCreateTenant`, `TestDeleteTenant`, `TestCreateTenantValidation`) | ✅ Tested |
@@ -87,7 +106,7 @@ Instead of a coverage %, this tracks whether the areas that actually matter have
 | Frontend complex forms (Tenants/Blockchain sections) | Unit (`TenantsSection.tsx`) | ⚠️ Partial — create/edit toggle tested; confirmation flows & side effects not yet |
 | Ingestor block parsing | Unit (`ingestor`) | ⚠️ Partial — 3 tests cover known edge cases only |
 
-> **Status snapshot (2026-08-27):** Unit and integration suites are both fully green. The known gaps are on the frontend — API client error classification and TenantsSection form flows are only partially tested — plus ingestor block-parsing edge cases.
+> **Status snapshot (2026-09-01):** Unit and integration suites are fully green. Latest in-cluster smoke test passed 6/6. The known gaps are on the frontend — API client error classification and TenantsSection form flows are only partially tested — plus ingestor block-parsing edge cases.
 
 ---
 
@@ -101,8 +120,9 @@ Instead of a coverage %, this tracks whether the areas that actually matter have
 
 ## CI History
 
-| Date | Commit | Backend | Frontend | Integration |
+| Date | Commit | Backend | Frontend | Integration / Smoke |
 |------|--------|---------|----------|-------------|
+| 2026-09-01 | — | — | — | ✅ In-cluster smoke pass (6/6) |
 | 2026-08-27 | — | — | — | ✅ All pass (30/30) |
 | 2026-08-26 | — | ✅ All pass | ✅ All pass (8/8) | — |
 | 2026-08-25 | — | ✅ All pass | ✅ All pass (8/8) | — |

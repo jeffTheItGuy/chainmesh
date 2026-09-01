@@ -1,38 +1,44 @@
 namespace: chainmesh
 replicaCount: 1
+
 image:
   repository: chainmesh-gateway
   tag: ""
   pullPolicy: Never
+
 service:
   port: 8080
   type: ClusterIP
-ingress:
-  className: traefik
-  host: api.chainmesh.nimbusurf.com
-  path: /
-  tlsSecretName: chainmesh-nimbusurf-tls
+
+# [INGRESS BLOCK REMOVED]
+
 envFrom:
   - secretRef:
       name: chainmesh-secrets
+
 env:
   PORT: "8080"
   POSTGRES_DB: "chainmesh"
   REDIS_ADDR: "chainmesh-redis-svc:6379"
   RPC_ENDPOINT_1: "https://ethereum-sepolia-rpc.publicnode.com"
   RPC_ENDPOINT_2: "https://rpc.sepolia.org"
+  POSTGRES_MAX_CONNS: "150"
+  POSTGRES_MIN_CONNS: "10"
+
 resources:
   limits:
     cpu: "500m"
     memory: "512Mi"
   requests:
-    cpu: "100m"
+    cpu: "250m"
     memory: "256Mi"
+
 securityContext:
   runAsNonRoot: true
   runAsUser: 1000
   runAsGroup: 1000
   fsGroup: 1000
+
 networkPolicy:
   allowedFrom:
     - app: chainmesh-web
@@ -42,15 +48,16 @@ networkPolicy:
       port: 5432
     - app: chainmesh-redis
       port: 6379
+
 probes:
   readiness:
-    path: "/health"
+    path: "/health/nodes"
     initialDelaySeconds: 15
     periodSeconds: 10
     timeoutSeconds: 5
     failureThreshold: 3
   liveness:
-    path: "/health"
+    path: "/health/nodes"
     initialDelaySeconds: 30
     periodSeconds: 30
     timeoutSeconds: 10
