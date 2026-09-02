@@ -1,76 +1,198 @@
+<!-- readme.md -->
 # Testing Strategy
 
-This directory documents how ChainMesh is tested across the development lifecycle — from local unit tests to post-production validation.
+This directory documents how ChainMesh is tested across the development lifecycle — from unit tests to integration tests, in-cluster smoke tests, and load tests.
+
+The documentation is intentionally limited to what is currently implemented by the test suite and automation in this repository.
 
 ---
 
-## Table of Contents
+## Test Documents
 
-1. [Test Pyramid](#test-pyramid)
-2. [Running the Tests](#running-the-tests)
-3. [CI Pipeline](#ci-pipeline)
-4. [Test Organization](#test-organization)
-5. [Coverage Reporting](#coverage-reporting)
-6. [Related Documents](#related-documents)
+| Document | Purpose |
+|---|---|
+| [results.md](results.md) | Current test results, known gaps, and suite status |
+| [unit-testing.md](unit-testing.md) | Backend and frontend unit tests |
+| [integration-testing.md](integration-testing.md) | Integration / API contract tests in `tests/go/` |
+| [smoke-test.md](smoke-test.md) | In-cluster smoke tests and latency baseline |
+| [load-test.md](load-test.md) | k6 load tests and load-test thresholds |
 
 ---
 
-## Test Pyramid
-
-Testing is layered as a pyramid, with the broadest, fastest checks at the base and the narrowest, most environment-dependent checks at the top.
+## Test Layers
 
 | Layer | What it covers | Documented in |
-|-------|----------------|---------------|
-| E2E / Smoke (top) | Post-production smoke tests against live deployments | [post-production-testing.md](post-production-testing.md) |
-| Integration (middle) | Docker Compose stack, API contract tests | [integration-testing.md](integration-testing.md) |
-| Unit (base) | Go `*_test.go`, React `*.test.tsx` | [unit-testing.md](unit-testing.md) |
+|---|---|---|
+| Unit | Go backend tests and frontend Vitest tests | [unit-testing.md](unit-testing.md) |
+| Integration | API contract tests against a running Gateway/Admin stack | [integration-testing.md](integration-testing.md) |
+| Smoke | In-cluster health checks against live ClusterIP services | [smoke-test.md](smoke-test.md) |
+| Load | k6-based gateway load testing | [load-test.md](load-test.md) |
 
 ---
 
 ## Running the Tests
 
-### Backend
+All `make` commands should be run from the repository root.
 
-Backend tests run through the Go toolchain from the `backend/` directory. A plain `go test ./...` runs the full suite; CI adds the race detector and produces coverage via `-coverprofile` followed by `go tool cover`. You can target a single package by path, or a single test with a `-run` filter. The canonical containerized run uses `docker-compose.test.yml`, which brings up disposable Postgres and Redis, applies migrations, then streams unit, Postgres-backed, and Redis-backed test stages into `test-results/`.
+### Backend Unit Tests
 
-### Frontend
+Backend unit tests run through the Makefile.
 
-Frontend checks run from the `frontend/` directory: type checking, linting, the Vitest unit suite (high-value targets only — see unit-testing.md), and a production build verification. In CI, Vitest runs once with verbose and JSON reporters plus coverage; locally it runs in watch mode.
+Run the fast backend unit tests:
+
+```bash
+make test-unit
+```
+
+Run the safe default test suite:
+
+```bash
+make test
+```
+
+Run the containerized backend and frontend test pipeline:
+
+```bash
+make test-docker
+```
+
+The containerized backend test runner also applies migrations, runs service-backed tests, and writes artifacts to `test-results/`.
+
+Relevant files:
+
+- `test/run-tests.sh`
+- `test/test.Dockerfile`
 
 ---
 
-## CI Pipeline
+### Frontend Unit Tests
 
-The GitHub Actions workflow (`.github/workflows/test.yml`) runs:
+Frontend tests run with Vitest.
 
-1. **Backend lint & test** — `go vet` followed by the race-enabled test pass
-2. **Frontend typecheck & lint** — TypeScript checking plus linting
-3. **Frontend build** — production build verification
-4. **Integration test** — spins up the Docker Compose stack and runs the API contract tests
+Run frontend tests locally:
+
+```bash
+make test-web
+```
+
+Run frontend tests using Docker:
+
+```bash
+make test-web-docker
+```
+
+The containerized frontend test runner installs dependencies, runs the Vitest suite once, and writes JSON results and coverage output to `test-results/web/`.
+
+Relevant file:
+
+- `test/web-tests.sh`
 
 ---
 
-## Test Organization
+### Integration Tests
 
-| Directory | Contents |
-|-----------|----------|
-| `backend/*/*_test.go` | Go unit tests (co-located with source) |
-| `frontend/src/*.test.tsx` | React component and hook tests (high-ROI only) |
-| `tests/go/` | Integration / API contract tests (run against the Docker Compose stack) |
-| `tests/smoke/` | Post-production smoke and latency-baseline scripts |
-| `tests/load/` | k6 load-test scripts |
+Integration tests live in `tests/go/` and use the Go build tag `integration`.
+
+Run them through Docker Compose using Make:
+
+```bash
+make test-integration
+```
+
+This starts the Gateway/Admin stack with Postgres and Redis, runs the integration suite, and tears the stack down.
+
+View the last integration summary:
+
+```bash
+make test-integration-logs
+```
+
+Tear down the integration environment:
+
+```bash
+make test-integration-down
+```
+
+See [integration-testing.md](integration-testing.md).
 
 ---
 
-## Coverage Reporting
+### Smoke Tests
 
-Coverage snapshots now live in the test docs themselves: backend and frontend unit results in [Unit Testing](unit-testing.md), cross-service results in [Integration Testing](integration-testing.md). Update those docs after significant test additions or before tagging a release. Don't paste raw test output — link to CI logs instead.
+Smoke tests run inside the k3s cluster and hit ClusterIP services directly.
+
+Relevant files:
+
+- `tests/smoke/smoke-k3s.sh`
+- `tests/smoke/baseline.sh`
+- `.github/workflows/smoke-test.yml`
+
+See [smoke-test.md](smoke-test.md).
+
+---
+
+### Load Tests
+
+Load tests use k6 and run against the gateway ClusterIP inside the cluster.
+
+Relevant files:
+
+- `tests/load/gateway_load.js`
+- `tests/load/run-load-test.sh`
+- `.github/workflows/load-test.yml`
+
+See [load-test.md](load-test.md).
+
+---
+
+## GitHub Actions Workflows
+
+The repository currently includes manually triggered workflows for in-cluster validation.
+
+| Workflow | Trigger | Purpose |
+|---|---|---|
+| `.github/workflows/smoke-test.yml` | `workflow_dispatch` | Runs in-cluster smoke tests |
+| `.github/workflows/load-test.yml` | `workflow_dispatch` | Runs in-cluster k6 load tests |
+
+These workflows publish results to the GitHub Actions job summary.
+
+---
+
+## Coverage and Results
+
+Coverage and detailed test artifacts are generated by the test runners.
+
+Backend artifacts are written under:
+
+```text
+test-results/
+```
+
+Frontend artifacts are written under:
+
+```text
+test-results/web/
+```
+
+Integration logs are written to:
+
+```text
+test-results/integration-full.log
+test-results/integration-summary.log
+```
+
+High-level pass/fail summaries, known gaps, and suite status are tracked in:
+
+- [results.md](results.md)
+
+Do not paste raw test output into the docs. Link to CI logs or refer to generated artifacts instead.
 
 ---
 
 ## Related Documents
 
-- [Unit Testing](unit-testing.md) — Go and frontend unit test patterns
-- [Integration Testing](integration-testing.md) — Docker Compose and API contract tests
-- [Post-Production Testing](post-production-testing.md) — Smoke tests, load tests, and chaos validation
-- [Developer Setup](../developers/setup.md) — Local environment configuration
+- [results.md](results.md)
+- [unit-testing.md](unit-testing.md)
+- [integration-testing.md](integration-testing.md)
+- [smoke-test.md](smoke-test.md)
+- [load-test.md](load-test.md)

@@ -1,259 +1,229 @@
+<!-- integration-testing.md -->
 # Integration Testing
 
-Integration tests verify that ChainMesh services work together correctly — Gateway ↔ Redis ↔ Postgres, Admin API ↔ Database, and the full request lifecycle.
+Integration tests verify that ChainMesh services work together correctly — Gateway, Admin API, Redis, and Postgres.
 
----
+The integration suite lives in:
 
-## Table of Contents
-
-1. [Test Environment](#test-environment)
-2. [Test Categories](#test-categories)
-3. [CI Integration](#ci-integration)
-4. [Troubleshooting](#troubleshooting)
-
----
-
-## Test Environment
-
-Integration tests run against a real Docker Compose stack:
-
-```bash
-# Start the full stack
-docker compose up -d
-
-# Wait for health checks
-sleep 15
-
-# Run integration tests
-cd tests/go
-go test ./... -tags=integration
+```text
+tests/go/
 ```
 
----
-
-## Test Categories
-
-### 1. API Contract Tests
-
-Verify that the Admin API and Gateway accept and return the expected shapes.
-
-**File:** `tests/go/admin_api_test.go`
+All integration tests use the Go build tag:
 
 ```go
 //go:build integration
-
-package integration
-
-import (
-    "bytes"
-    "encoding/json"
-    "net/http"
-    "os"
-    "testing"
-)
-
-func TestCreateTenant(t *testing.T) {
-    adminSecret := os.Getenv("ADMIN_SECRET")
-    payload := map[string]any{
-        "name":       "Integration Test Tenant",
-        "quota_rpm":  100,
-        "quota_rps":  10,
-        "quota_daily": 10000,
-        "plan":       "free",
-    }
-    body, _ := json.Marshal(payload)
-
-    req, _ := http.NewRequest("POST", "http://localhost:8081/tenants", bytes.NewReader(body))
-    req.Header.Set("X-Admin-Secret", adminSecret)
-    req.Header.Set("Content-Type", "application/json")
-
-    resp, err := http.DefaultClient.Do(req)
-    if err != nil {
-        t.Fatalf("request failed: %v", err)
-    }
-    defer resp.Body.Close()
-
-    if resp.StatusCode != http.StatusCreated {
-        t.Fatalf("expected 201, got %d", resp.StatusCode)
-    }
-
-    var result map[string]any
-    json.NewDecoder(resp.Body).Decode(&result)
-    if result["api_key"] == "" {
-        t.Fatal("expected api_key in response")
-    }
-}
 ```
 
-### 2. Gateway Proxy Tests
+---
 
-Verify end-to-end RPC proxying with auth, caching, and rate limiting.
+## Running Integration Tests
 
-**File:** `tests/go/gateway_proxy_test.go`
+Integration tests require a running Gateway/Admin environment with Postgres and Redis available.
 
-```go
-//go:build integration
-
-func TestGatewayRPCWithAuth(t *testing.T) {
-    apiKey := createTestTenant(t) // helper that calls Admin API
-
-    payload := map[string]any{
-        "jsonrpc": "2.0",
-        "method":  "eth_chainId",
-        "params":  []any{},
-        "id":      1,
-    }
-    body, _ := json.Marshal(payload)
-
-    req, _ := http.NewRequest("POST", "http://localhost:8080/v1/", bytes.NewReader(body))
-    req.Header.Set("Authorization", "Bearer "+apiKey)
-    req.Header.Set("Content-Type", "application/json")
-
-    resp, err := http.DefaultClient.Do(req)
-    if err != nil {
-        t.Fatalf("request failed: %v", err)
-    }
-    defer resp.Body.Close()
-
-    if resp.StatusCode != http.StatusOK {
-        t.Fatalf("expected 200, got %d", resp.StatusCode)
-    }
-
-    var result map[string]any
-    json.NewDecoder(resp.Body).Decode(&result)
-    if result["result"] == nil {
-        t.Fatal("expected result in JSON-RPC response")
-    }
-}
-```
-
-### 3. Rate Limit Integration Tests
-
-Verify Redis-backed rate limiting works across the real stack.
-
-```go
-func TestRateLimitEnforced(t *testing.T) {
-    apiKey := createTestTenantWithQuota(t, 0, 2, 1000) // 2 RPM
-
-    // First 2 requests should succeed
-    for i := 0; i < 2; i++ {
-        resp := callGateway(t, apiKey, "eth_chainId")
-        if resp.StatusCode != http.StatusOK {
-            t.Fatalf("request %d: expected 200, got %d", i+1, resp.StatusCode)
-        }
-    }
-
-    // Third request should be rate limited
-    resp := callGateway(t, apiKey, "eth_chainId")
-    if resp.StatusCode != http.StatusTooManyRequests {
-        t.Fatalf("expected 429, got %d", resp.StatusCode)
-    }
-
-    retryAfter := resp.Header.Get("Retry-After")
-    if retryAfter == "" {
-        t.Fatal("expected Retry-After header on 429")
-    }
-}
-```
-
-### 4. Cache Integration Tests
-
-Verify Redis caching behavior for cacheable methods.
-
-```go
-func TestCacheHitHeader(t *testing.T) {
-    apiKey := createTestTenant(t)
-
-    // First call — cache miss
-    resp1 := callGateway(t, apiKey, "eth_chainId")
-    if resp1.Header.Get("X-Cache") != "MISS" {
-        t.Fatalf("expected X-Cache: MISS on first call, got %s", resp1.Header.Get("X-Cache"))
-    }
-
-    // Second call — cache hit
-    resp2 := callGateway(t, apiKey, "eth_chainId")
-    if resp2.Header.Get("X-Cache") != "HIT" {
-        t.Fatalf("expected X-Cache: HIT on second call, got %s", resp2.Header.Get("X-Cache"))
-    }
-}
-```
-
-### 5. Database Migration Tests
-
-Verify migrations apply cleanly and roll back correctly.
+Run the integration suite through Docker Compose using Make:
 
 ```bash
-# In CI or locally with a fresh Postgres container
-docker run -d --name chainmesh-test-pg -e POSTGRES_PASSWORD=test postgres:15-alpine
+make test-integration
+```
 
-# Apply all migrations
-for f in backend/database/migrations/*.up.sql; do
-    docker exec -i chainmesh-test-pg psql -U postgres -d postgres < "$f"
-done
+This command starts the Gateway/Admin stack, runs the integration tests in `tests/go/`, and tears the stack down.
 
-# Verify tables exist
-docker exec chainmesh-test-pg psql -U postgres -d postgres -c "\dt"
+View the last integration summary:
 
-# Rollback (if down migrations exist)
-for f in $(ls backend/database/migrations/*.down.sql | sort -r); do
-    docker exec -i chainmesh-test-pg psql -U postgres -d postgres < "$f"
-done
+```bash
+make test-integration-logs
+```
+
+Tear down the integration environment:
+
+```bash
+make test-integration-down
+```
+
+The runner writes logs to:
+
+```text
+test-results/integration-full.log
+test-results/integration-summary.log
 ```
 
 ---
 
-## CI Integration
+## Environment Variables
 
-The GitHub Actions workflow:
+The integration tests use the following environment variables internally. When using `make test-integration`, Docker Compose manages them automatically.
 
-1. Starts Postgres + Redis services
-2. Builds and starts Gateway + Admin API
-3. Waits for `/health` endpoints
-4. Runs `go test ./tests/go/... -tags=integration`
-5. Captures service logs on failure
+| Variable | Purpose | Default |
+|---|---|---|
+| `GATEWAY_URL` | Gateway JSON-RPC endpoint | `http://localhost:8080/v1/` |
+| `ADMIN_URL` | Admin API base URL | `http://localhost:8081` |
+| `ADMIN_SECRET` | Admin secret for admin endpoints | `devsecret` |
 
-```yaml
-# .github/workflows/test.yml (integration job excerpt)
-- name: Start services
-  run: docker compose up -d
+---
 
-- name: Wait for health
-  run: |
-    for i in {1..30}; do
-      curl -sf http://localhost:8081/health && break
-      sleep 2
-    done
+## Implemented Integration Test Files
 
-- name: Run integration tests
-  run: cd tests/go && go test ./... -tags=integration -v
-  env:
-    ADMIN_SECRET: test-secret
+| File | Purpose |
+|---|---|
+| `tests/go/admin_api_test.go` | Admin API contract tests |
+| `tests/go/cache_test.go` | Gateway cache behavior |
+| `tests/go/failover_test.go` | Gateway availability and JSON-RPC error behavior |
+| `tests/go/gateway_proxy_test.go` | Gateway auth, RPC, batch, method, and header behavior |
+| `tests/go/rate_limit_test.go` | RPM, daily quota, reset, and header behavior |
+| `tests/go/security_test.go` | Invalid key, missing admin secret, SSRF, private IP blocking |
+| `tests/go/testutil.go` | Shared helpers for integration tests |
+
+---
+
+## What Is Covered
+
+### Admin API
+
+Implemented tests cover:
+
+- `/health`
+- Tenant creation
+- Tenant listing
+- Tenant deletion
+- Tenant validation errors
+- Missing admin secret rejection
+- Tenant usage endpoint
+- Audit log endpoint
+- `/blocks` endpoint
+
+Relevant file:
+
+```text
+tests/go/admin_api_test.go
 ```
 
 ---
 
-## Troubleshooting
+### Gateway RPC and Auth
 
-### "connection refused" to Gateway/Admin
+Implemented tests cover:
 
-Services need time to start. Add a health-check wait loop or use `docker compose up --wait` (Compose v2.20+).
+- Authenticated JSON-RPC calls
+- Missing auth rejection
+- Invalid API key rejection
+- Supported method calls:
+  - `eth_chainId`
+  - `eth_blockNumber`
+  - `net_version`
+- Batch requests
+- Rate-limit headers on successful RPC calls
+- Gateway health endpoint behavior
 
-### Redis rate limit tests flaky
+Relevant file:
 
-Rate limit windows are time-based. Use generous margins (e.g., test 2 RPM with a 3-second window) or mock the clock if possible.
+```text
+tests/go/gateway_proxy_test.go
+```
 
-### Postgres state bleeding between tests
+---
 
-Use `t.Parallel()` carefully. Either:
-- Run tests sequentially, or
-- Create a unique tenant per test (recommended), or
-- Use test transactions that roll back
+### Caching
+
+Implemented tests cover:
+
+- Cache MISS on first call
+- Cache HIT on second call
+- Non-cacheable method behavior
+- Cache isolation between API keys
+
+The cache MISS/HIT test uses `eth_getBalance` with a random address to avoid false failures caused by a warm cache.
+
+Relevant file:
+
+```text
+tests/go/cache_test.go
+```
+
+---
+
+### Rate Limiting
+
+Implemented tests cover:
+
+- RPM enforcement
+- Daily quota behavior
+- Rate-limit window reset
+- Rate-limit headers on successful requests
+
+The rate-limit tests use a helper to avoid minute-boundary flakiness.
+
+Relevant file:
+
+```text
+tests/go/rate_limit_test.go
+```
+
+---
+
+### Security
+
+Implemented tests cover:
+
+- Invalid API key rejection
+- Missing admin secret rejection
+- SSRF protection for loopback endpoints
+- Private IP blocking
+
+Relevant file:
+
+```text
+tests/go/security_test.go
+```
+
+---
+
+### Gateway Availability and JSON-RPC Errors
+
+Implemented tests cover:
+
+- Gateway serving successful RPC requests when healthy
+- Gateway returning an acceptable JSON-RPC error for invalid methods
+
+These tests are not full failover or chaos tests. They only verify basic availability and error-shape behavior.
+
+Relevant file:
+
+```text
+tests/go/failover_test.go
+```
+
+---
+
+## What Is Not Currently Covered
+
+The integration suite does **not** currently automate:
+
+- Migration rollback tests
+- Down-migration verification
+- True failover testing
+- Chaos testing
+- Redis failure behavior
+- Postgres failure behavior
+- Production external-endpoint validation
+
+Those areas are either not automated yet or belong in manual/runbook documentation.
+
+---
+
+## Notes
+
+- The integration suite counts top-level Go test functions.
+- Some tests contain subtests, especially method coverage tests.
+- The cache tests intentionally avoid using already-warm methods such as `eth_chainId` for MISS/HIT verification.
+- Rate-limit tests may take over one minute because reset behavior waits for a new rate-limit window.
 
 ---
 
 ## Related Documents
 
-- [Unit Testing](unit-testing.md) — Isolated component tests
-- [Post-Production Testing](post-production-testing.md) — Validation against live deployments
-- [Testing Strategy](README.md) — Overview of the test pyramid
-- [Developer Setup](../developers/setup.md) — Local Docker Compose configuration
+- [readme.md](readme.md)
+- [results.md](results.md)
+- [unit-testing.md](unit-testing.md)
+- [smoke-test.md](smoke-test.md)
+- [load-test.md](load-test.md)
